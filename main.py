@@ -1145,339 +1145,164 @@ class MainWindow(QMainWindow):
 
     def init_ui(self):
         self.setWindowTitle(t("app_title"))
-        self.setMinimumSize(1000, 700)
 
-        self._create_menu()
-        self._create_toolbar()
+        # 設置為無邊框窗口
+        self.setWindowFlags(Qt.FramelessWindowHint)
 
-        # 創建左側工具列（停靠面板）
-        self._create_left_dock()
+        # 設置為螢幕 1/10 寬度，高度滿屏
+        screen = QApplication.desktop().screenGeometry()
+        width = int(screen.width() * 0.1)  # 1/10 螢幕寬度
+        width = max(70, min(width, 100))   # 限制在 70-100 像素之間
+        height = screen.height()
+        x = screen.width() - width  # 放在右側
+        y = 0
+        self.setGeometry(x, y, width, height)
+        self.setMinimumSize(width, 400)
 
-        # 創建主內容區域
-        central = QWidget()
-        self.setCentralWidget(central)
-        self._create_central_content(central)
+        # 創建窄側邊欄 UI
+        self._create_sidebar()
 
         # 狀態列
         self.status_bar = QStatusBar()
+        self.status_bar.setStyleSheet("QStatusBar { font-size: 10px; }")
         self.setStatusBar(self.status_bar)
         self.status_bar.showMessage(t("ready"))
 
-        self.captcha_label = QLabel("")
-        self.captcha_label.setStyleSheet("color: orange; font-weight: bold;")
-        self.status_bar.addPermanentWidget(self.captcha_label)
+    def _create_sidebar(self):
+        """創建窄側邊欄"""
+        # 設置中央部件
+        central = QWidget()
+        self.setCentralWidget(central)
+        layout = QVBoxLayout(central)
+        layout.setContentsMargins(5, 5, 5, 5)
+        layout.setSpacing(8)
 
-        # 資料庫狀態
-        self.db_status_label = QLabel(t("db_status_disconnected"))
-        self.db_status_label.setStyleSheet("color: gray;")
-        self.status_bar.addPermanentWidget(self.db_status_label)
-
-        # 定位視窗到螢幕右側
-        self._position_window_right()
-
-    def _position_window_right(self):
-        """將視窗定位到螢幕右側"""
-        screen = QApplication.desktop().screenGeometry()
-        # 視窗放在右邊 40% 的區域
-        width = int(screen.width() * 0.45)
-        height = screen.height()
-        x = screen.width() - width
-        y = 0
-        self.setGeometry(x, y, width, height)
-
-    def _create_left_dock(self):
-        """創建左側工具列停靠面板"""
-        dock = QDockWidget("", self)
-        dock.setFeatures(QDockWidget.NoDockWidgetFeatures)
-        dock.setTitleBarWidget(QWidget())  # 隱藏標題列
-
-        # 左側工具列容器
-        dock_content = QWidget()
-        dock_content.setFixedWidth(80)
-        dock_layout = QVBoxLayout(dock_content)
-        dock_layout.setContentsMargins(5, 15, 5, 15)
-        dock_layout.setSpacing(10)
-
-        # 標題
-        title = QLabel("🚀")
-        title.setAlignment(Qt.AlignCenter)
-        title.setStyleSheet("font-size: 24px;")
-        dock_layout.addWidget(title)
-
-        dock_layout.addSpacing(10)
-
-        # 開瀏覽器按鈕
-        self.btn_launch_browser = QPushButton("🌐\n瀏覽器")
-        self.btn_launch_browser.setFixedHeight(60)
-        self.btn_launch_browser.clicked.connect(self._open_browser_dialog)
-        self.btn_launch_browser.setStyleSheet("""
-            QPushButton {
+        # 拖動區域（頂部）
+        drag_area = QLabel("🚀 AUTO")
+        drag_area.setAlignment(Qt.AlignCenter)
+        drag_area.setStyleSheet("""
+            QLabel {
                 font-size: 12px;
-                border: 2px solid #4CAF50;
-                border-radius: 8px;
-                background-color: #E8F5E9;
-            }
-            QPushButton:hover {
-                background-color: #C8E6C9;
-            }
-        """)
-        dock_layout.addWidget(self.btn_launch_browser)
-
-        # 任務管理按鈕
-        self.btn_task_manager = QPushButton("📋\n任務")
-        self.btn_task_manager.setFixedHeight(60)
-        self.btn_task_manager.clicked.connect(self._open_task_dialog)
-        self.btn_task_manager.setStyleSheet("""
-            QPushButton {
-                font-size: 12px;
-                border: 2px solid #2196F3;
-                border-radius: 8px;
-                background-color: #E3F2FD;
-            }
-            QPushButton:hover {
-                background-color: #BBDEFB;
-            }
-        """)
-        dock_layout.addWidget(self.btn_task_manager)
-
-        # 查看日誌按鈕
-        self.btn_view_logs = QPushButton("📝\n日誌")
-        self.btn_view_logs.setFixedHeight(60)
-        self.btn_view_logs.clicked.connect(self._open_log_dialog)
-        self.btn_view_logs.setStyleSheet("""
-            QPushButton {
-                font-size: 12px;
-                border: 2px solid #FF9800;
-                border-radius: 8px;
-                background-color: #FFF3E0;
-            }
-            QPushButton:hover {
-                background-color: #FFE0B2;
-            }
-        """)
-        dock_layout.addWidget(self.btn_view_logs)
-
-        # 設定按鈕
-        self.btn_settings = QPushButton("⚙️\n設定")
-        self.btn_settings.setFixedHeight(60)
-        self.btn_settings.clicked.connect(self._open_settings_dialog)
-        self.btn_settings.setStyleSheet("""
-            QPushButton {
-                font-size: 12px;
-                border: 2px solid #9C27B0;
-                border-radius: 8px;
-                background-color: #F3E5F5;
-            }
-            QPushButton:hover {
-                background-color: #E1BEE7;
-            }
-        """)
-        dock_layout.addWidget(self.btn_settings)
-
-        # 資料庫按鈕
-        self.btn_database = QPushButton("💾\n資料庫")
-        self.btn_database.setFixedHeight(60)
-        self.btn_database.clicked.connect(self._open_database_dialog)
-        self.btn_database.setStyleSheet("""
-            QPushButton {
-                font-size: 12px;
-                border: 2px solid #607D8B;
-                border-radius: 8px;
-                background-color: #ECEFF1;
-            }
-            QPushButton:hover {
-                background-color: #CFD8DC;
-            }
-        """)
-        dock_layout.addWidget(self.btn_database)
-
-        dock_layout.addStretch()
-
-        # 語言切換
-        lang_label = QLabel(f"🌐 {t('menu_language')}")
-        lang_label.setAlignment(Qt.AlignCenter)
-        lang_label.setStyleSheet("font-size: 11px; color: #666;")
-        dock_layout.addWidget(lang_label)
-
-        self.lang_combo_dock = QComboBox()
-        self.lang_combo_dock.setFixedWidth(70)
-        self.lang_combo_dock.setStyleSheet("font-size: 11px;")
-        for lang_code, lang_name in i18n.t.lang_names.items():
-            self.lang_combo_dock.addItem(lang_name, lang_code)
-        current_lang = get_current_lang()
-        idx = self.lang_combo_dock.findData(current_lang)
-        if idx >= 0:
-            self.lang_combo_dock.setCurrentIndex(idx)
-        self.lang_combo_dock.currentIndexChanged.connect(self._on_language_changed)
-        dock_layout.addWidget(self.lang_combo_dock)
-
-        dock.setWidget(dock_content)
-        self.addDockWidget(Qt.LeftDockWidgetArea, dock)
-        self.left_dock = dock
-
-    def _create_central_content(self, parent):
-        """創建主內容區域"""
-        layout = QVBoxLayout(parent)
-        layout.setContentsMargins(15, 15, 15, 15)
-        layout.setSpacing(15)
-
-        # 頂部狀態卡片
-        status_card = QWidget()
-        status_card.setStyleSheet("""
-            QWidget {
-                background-color: #f5f5f5;
-                border-radius: 10px;
-                border: 1px solid #ddd;
-            }
-        """)
-        status_layout = QHBoxLayout(status_card)
-
-        # 運行狀態
-        self.status_indicator = QLabel("⚪ " + t("toolbar_stop"))
-        self.status_indicator.setStyleSheet("font-size: 16px; font-weight: bold; color: #666;")
-        status_layout.addWidget(self.status_indicator)
-
-        status_layout.addStretch()
-
-        # 當前任務
-        self.current_task_label = QLabel(t("select_task_hint"))
-        self.current_task_label.setStyleSheet("font-size: 14px; color: #333;")
-        status_layout.addWidget(self.current_task_label)
-
-        layout.addWidget(status_card)
-
-        # 操作區域
-        ops_card = QWidget()
-        ops_card.setStyleSheet("""
-            QWidget {
-                background-color: white;
-                border-radius: 10px;
-                border: 1px solid #ddd;
-            }
-        """)
-        ops_layout = QVBoxLayout(ops_card)
-
-        ops_title = QLabel("▶️ " + t("panel_operations"))
-        ops_title.setStyleSheet("font-size: 16px; font-weight: bold; color: #333; padding: 5px;")
-        ops_layout.addWidget(ops_title)
-
-        # 操作按鈕行
-        ops_btns = QHBoxLayout()
-
-        self.run_btn = QPushButton("▶ " + t("toolbar_run"))
-        self.run_btn.setFixedHeight(45)
-        self.run_btn.setStyleSheet("""
-            QPushButton {
-                background-color: #4CAF50;
-                color: white;
-                border: none;
-                border-radius: 8px;
-                font-size: 14px;
                 font-weight: bold;
-            }
-            QPushButton:hover { background-color: #45a049; }
-            QPushButton:disabled { background-color: #ccc; }
-        """)
-        self.run_btn.clicked.connect(self.run_task)
-        ops_btns.addWidget(self.run_btn)
-
-        self.stop_btn = QPushButton("⏹ " + t("toolbar_stop"))
-        self.stop_btn.setFixedHeight(45)
-        self.stop_btn.setEnabled(False)
-        self.stop_btn.setStyleSheet("""
-            QPushButton {
-                background-color: #f44336;
-                color: white;
-                border: none;
-                border-radius: 8px;
-                font-size: 14px;
-                font-weight: bold;
-            }
-            QPushButton:hover { background-color: #da190b; }
-            QPushButton:disabled { background-color: #ccc; }
-        """)
-        self.stop_btn.clicked.connect(self.stop_task)
-        ops_btns.addWidget(self.stop_btn)
-
-        self.pause_btn = QPushButton("⏸ " + t("toolbar_pause"))
-        self.pause_btn.setFixedHeight(45)
-        self.pause_btn.setEnabled(False)
-        self.pause_btn.setStyleSheet("""
-            QPushButton {
-                background-color: #FF9800;
-                color: white;
-                border: none;
-                border-radius: 8px;
-                font-size: 14px;
-                font-weight: bold;
-            }
-            QPushButton:hover { background-color: #e68a00; }
-            QPushButton:disabled { background-color: #ccc; }
-        """)
-        self.pause_btn.clicked.connect(self.pause_task)
-        ops_btns.addWidget(self.pause_btn)
-
-        self.captcha_btn = QPushButton("☑ " + t("toolbar_captcha_resolved"))
-        self.captcha_btn.setFixedHeight(45)
-        self.captcha_btn.setEnabled(False)
-        self.captcha_btn.setStyleSheet("""
-            QPushButton {
-                background-color: #9C27B0;
-                color: white;
-                border: none;
-                border-radius: 8px;
-                font-size: 14px;
-                font-weight: bold;
-            }
-            QPushButton:hover { background-color: #7B1FA2; }
-            QPushButton:disabled { background-color: #ccc; }
-        """)
-        self.captcha_btn.clicked.connect(self.resolve_captcha)
-        ops_btns.addWidget(self.captcha_btn)
-
-        ops_layout.addLayout(ops_btns)
-        layout.addWidget(ops_card)
-
-        # 日誌預覽區域
-        log_card = QWidget()
-        log_card.setStyleSheet("""
-            QWidget {
-                background-color: white;
-                border-radius: 10px;
-                border: 1px solid #ddd;
-            }
-        """)
-        log_layout = QVBoxLayout(log_card)
-
-        log_header = QHBoxLayout()
-        log_title = QLabel("📋 " + t("tab_execution_log"))
-        log_title.setStyleSheet("font-size: 16px; font-weight: bold; color: #333; padding: 5px;")
-        log_header.addWidget(log_title)
-
-        log_header.addStretch()
-
-        self.btn_clear_log = QPushButton(t("btn_clear_log"))
-        self.btn_clear_log.setFixedSize(80, 30)
-        self.btn_clear_log.clicked.connect(self.clear_log)
-        log_header.addWidget(self.btn_clear_log)
-
-        log_layout.addLayout(log_header)
-
-        self.log_display = QTextEdit()
-        self.log_display.setReadOnly(True)
-        self.log_display.setStyleSheet("""
-            QTextEdit {
-                background-color: #1e1e1e;
-                color: #d4d4d4;
-                font-family: 'Consolas', 'Monaco', monospace;
-                font-size: 12px;
+                color: #fff;
+                background-color: #1976D2;
                 border-radius: 5px;
                 padding: 5px;
             }
         """)
-        log_layout.addWidget(self.log_display)
+        drag_area.mousePressEvent = lambda e: self._start_drag(e)
+        drag_area.mouseMoveEvent = lambda e: self._drag(e)
+        layout.addWidget(drag_area)
 
-        layout.addWidget(log_card)
+        # 最小化按鈕
+        min_btn = QPushButton("─")
+        min_btn.setFixedHeight(25)
+        min_btn.clicked.connect(self.showMinimized)
+        min_btn.setStyleSheet("""
+            QPushButton {
+                background-color: #FFC107;
+                color: #333;
+                border: none;
+                border-radius: 5px;
+                font-weight: bold;
+            }
+            QPushButton:hover { background-color: #FFD54F; }
+        """)
+        layout.addWidget(min_btn)
+
+        # 關閉按鈕
+        close_btn = QPushButton("✕")
+        close_btn.setFixedHeight(25)
+        close_btn.clicked.connect(self.close)
+        close_btn.setStyleSheet("""
+            QPushButton {
+                background-color: #F44336;
+                color: #fff;
+                border: none;
+                border-radius: 5px;
+                font-weight: bold;
+            }
+            QPushButton:hover { background-color: #E57373; }
+        """)
+        layout.addWidget(close_btn)
+
+        layout.addSpacing(10)
+
+        # 功能按鈕
+        buttons = [
+            ("🌐", "btn_browser", "_open_browser_dialog"),
+            ("📋", "btn_tasks", "_open_task_dialog"),
+            ("📝", "btn_logs", "_open_log_dialog"),
+            ("⚙️", "btn_settings", "_open_settings_dialog"),
+            ("💾", "btn_database", "_open_database_dialog"),
+            ("📁", "menu_import_task", "_import_task"),
+            ("🏃", "toolbar_run", "_quick_run"),
+        ]
+
+        for icon, key, method in buttons:
+            btn = QPushButton(icon)
+            btn.setFixedHeight(45)
+            btn.clicked.connect(getattr(self, method))
+            btn.setToolTip(t(key))
+            btn.setStyleSheet("""
+                QPushButton {
+                    font-size: 18px;
+                    border: 2px solid #ddd;
+                    border-radius: 8px;
+                    background-color: #f5f5f5;
+                }
+                QPushButton:hover {
+                    background-color: #e0e0e0;
+                    border-color: #1976D2;
+                }
+            """)
+            layout.addWidget(btn)
+
+        layout.addStretch()
+
+        # 語言切換
+        self.lang_combo = QComboBox()
+        self.lang_combo.setFixedHeight(30)
+        for lang_code, lang_name in i18n.t.lang_names.items():
+            self.lang_combo.addItem(lang_name[:3], lang_code)
+        current_lang = get_current_lang()
+        idx = self.lang_combo.findData(current_lang)
+        if idx >= 0:
+            self.lang_combo.setCurrentIndex(idx)
+        self.lang_combo.currentIndexChanged.connect(self._on_language_changed)
+        self.lang_combo.setStyleSheet("""
+            QComboBox {
+                font-size: 10px;
+                border: 1px solid #ddd;
+                border-radius: 5px;
+                padding: 2px 5px;
+            }
+        """)
+        layout.addWidget(self.lang_combo)
+
+    def _start_drag(self, event):
+        """開始拖動窗口"""
+        if event.button() == Qt.LeftButton:
+            self._drag_pos = event.globalPos() - self.frameGeometry().topLeft()
+            event.accept()
+
+    def _drag(self, event):
+        """拖動窗口"""
+        if event.buttons() == Qt.LeftButton:
+            self.move(event.globalPos() - self._drag_pos)
+            event.accept()
+
+    def _import_task(self):
+        """導入任務"""
+        from task_dialog import TaskDialog
+        dialog = TaskDialog(self)
+        dialog.exec_()
+
+    def _quick_run(self):
+        """快速運行任務"""
+        from task_dialog import TaskDialog
+        dialog = TaskDialog(self)
+        dialog.exec_()
 
     def _open_browser_dialog(self):
         """打開瀏覽器對話框"""
@@ -1510,48 +1335,13 @@ class MainWindow(QMainWindow):
         dialog.exec_()
 
     def log(self, msg):
-        """添加日誌（保持向後兼容）"""
-        if hasattr(self, 'log_display'):
-            timestamp = time.strftime("%H:%M:%S")
-            self.log_display.append(f"[{timestamp}] {msg}")
-            # 滾動到底部
-            cursor = self.log_display.textCursor()
-            cursor.movePosition(QTextCursor.End)
-            self.log_display.setTextCursor(cursor)
+        """記錄日誌到狀態列"""
+        timestamp = time.strftime("%H:%M:%S")
+        self.status_bar.showMessage(f"[{timestamp}] {msg}")
 
     def clear_log(self):
         """清除日誌"""
-        if hasattr(self, 'log_display'):
-            self.log_display.clear()
-
-    def _create_menu(self):
-        menubar = self.menuBar()
-
-        # 檔案菜單
-        file_menu = menubar.addMenu(t("menu_file"))
-
-        new_action = QAction(t("menu_new_task"), self)
-        new_action.triggered.connect(self.new_task)
-        file_menu.addAction(new_action)
-
-        import_action = QAction(t("menu_import_task"), self)
-        import_action.triggered.connect(self.import_task)
-        file_menu.addAction(import_action)
-
-        file_menu.addSeparator()
-
-        exit_action = QAction(t("menu_exit"), self)
-        exit_action.triggered.connect(self.close)
-        file_menu.addAction(exit_action)
-
-        # 語言菜單
-        lang_menu = menubar.addMenu(t("menu_language"))
-
-        self.lang_actions = {}
-        for lang_code, lang_name in i18n.t.lang_names.items():
-            action = QAction(lang_name, self)
-            action.setCheckable(True)
-            action.setData(lang_code)
+        self.status_bar.showMessage(t("ready"))
             action.triggered.connect(lambda checked, code=lang_code: self._change_language(code))
             lang_menu.addAction(action)
             self.lang_actions[lang_code] = action
@@ -1607,39 +1397,9 @@ class MainWindow(QMainWindow):
 
     def _rebuild_ui(self):
         """重新構建 UI（語言切換後）"""
-        self.menuBar().clear()
-        self._create_menu()
-
-        for tb in self.findChildren(QToolBar):
-            self.removeToolBar(tb)
-        self._create_toolbar()
-
         self.setWindowTitle(t("app_title"))
 
-        # 更新主內容區域
-        self.run_btn.setText("▶ " + t("toolbar_run"))
-        self.stop_btn.setText("⏹ " + t("toolbar_stop"))
-        self.pause_btn.setText("⏸ " + t("toolbar_pause"))
-        self.captcha_btn.setText("☑ " + t("toolbar_captcha_resolved"))
-        self.btn_clear_log.setText(t("btn_clear_log"))
-
-        # 更新左側工具列按鈕文字
-        self.btn_launch_browser.setText("🌐\n" + t("btn_browser"))
-        self.btn_task_manager.setText("📋\n" + t("btn_tasks"))
-        self.btn_view_logs.setText("📝\n" + t("btn_logs"))
-        self.btn_settings.setText("⚙️\n" + t("btn_settings"))
-        self.btn_database.setText("💾\n" + t("btn_database"))
-
-        # 更新左側 dock 語言下拉選單
-        if hasattr(self, 'lang_combo_dock'):
-            self.lang_combo_dock.blockSignals(True)
-            current_lang = get_current_lang()
-            idx = self.lang_combo_dock.findData(current_lang)
-            if idx >= 0:
-                self.lang_combo_dock.setCurrentIndex(idx)
-            self.lang_combo_dock.blockSignals(False)
-
-        # 更新工具列語言下拉選單
+        # 更新語言下拉選單
         if hasattr(self, 'lang_combo'):
             self.lang_combo.blockSignals(True)
             current_lang = get_current_lang()
@@ -1649,581 +1409,34 @@ class MainWindow(QMainWindow):
             self.lang_combo.blockSignals(False)
 
         self.status_bar.showMessage(t("ready"))
-        self._update_db_status()
-
-    def _create_toolbar(self):
-        toolbar = QToolBar()
-        toolbar.setIconSize(QSize(28, 28))
-        self.addToolBar(toolbar)
-
-        self.run_btn = QPushButton(t("toolbar_run"))
-        self.run_btn.clicked.connect(self.run_task)
-        toolbar.addWidget(self.run_btn)
-
-        self.stop_btn = QPushButton(t("toolbar_stop"))
-        self.stop_btn.clicked.connect(self.stop_task)
-        self.stop_btn.setEnabled(False)
-        toolbar.addWidget(self.stop_btn)
-
-        self.pause_btn = QPushButton(t("toolbar_pause"))
-        self.pause_btn.clicked.connect(self.pause_task)
-        self.pause_btn.setEnabled(False)
-        toolbar.addWidget(self.pause_btn)
-
-        toolbar.addSeparator()
-
-        self.captcha_btn = QPushButton(t("toolbar_captcha_resolved"))
-        self.captcha_btn.clicked.connect(self.resolve_captcha)
-        self.captcha_btn.setEnabled(False)
-        toolbar.addWidget(self.captcha_btn)
-
-        toolbar.addSeparator()
-
-        # 語言切換下拉選單
-        lang_label = QLabel(f"🌐 {t('menu_language')}: ")
-        toolbar.addWidget(lang_label)
-
-        self.lang_combo = QComboBox()
-        self.lang_combo.setFixedWidth(120)
-        for lang_code, lang_name in i18n.t.lang_names.items():
-            self.lang_combo.addItem(lang_name, lang_code)
-        current_lang = get_current_lang()
-        idx = self.lang_combo.findData(current_lang)
-        if idx >= 0:
-            self.lang_combo.setCurrentIndex(idx)
-        self.lang_combo.currentIndexChanged.connect(self._on_language_changed)
-        toolbar.addWidget(self.lang_combo)
-
-    def _create_task_panel(self) -> QWidget:
-        panel = QWidget()
-        layout = QVBoxLayout(panel)
-
-        self.task_panel_title = QLabel(t("panel_task_list"))
-        self.task_panel_title.setStyleSheet("font-size: 16px; font-weight: bold;")
-        layout.addWidget(self.task_panel_title)
-
-        self.task_list = QListWidget()
-        self.task_list.itemDoubleClicked.connect(self.edit_task)
-        layout.addWidget(self.task_list)
-
-        btn_layout = QHBoxLayout()
-
-        self.btn_new = QPushButton(t("btn_new"))
-        self.btn_new.clicked.connect(self.new_task)
-        btn_layout.addWidget(self.btn_new)
-
-        self.btn_edit = QPushButton(t("btn_edit"))
-        self.btn_edit.clicked.connect(lambda: self.edit_task(self.task_list.currentItem()))
-        btn_layout.addWidget(self.btn_edit)
-
-        self.btn_delete = QPushButton(t("btn_delete"))
-        self.btn_delete.clicked.connect(self.delete_task)
-        btn_layout.addWidget(self.btn_delete)
-
-        layout.addLayout(btn_layout)
-
-        self.btn_refresh = QPushButton(t("btn_refresh"))
-        self.btn_refresh.clicked.connect(self.refresh_task_list)
-        layout.addWidget(self.btn_refresh)
-
-        return panel
-
-    def _create_work_panel(self) -> QWidget:
-        panel = QWidget()
-        layout = QVBoxLayout(panel)
-
-        self.tabs = QTabWidget()
-
-        # 任務詳情頁
-        detail_tab = QWidget()
-        detail_layout = QVBoxLayout(detail_tab)
-
-        self.detail_label = QLabel(t("select_task_hint"))
-        self.detail_label.setStyleSheet("font-size: 14px; padding: 10px;")
-        detail_layout.addWidget(self.detail_label)
-
-        self.detail_text = QTextBrowser()
-        self.detail_text.setOpenExternalLinks(True)
-        detail_layout.addWidget(self.detail_text)
-
-        self.tabs.addTab(detail_tab, t("tab_task_detail"))
-
-        # 日誌頁
-        log_tab = QWidget()
-        log_layout = QVBoxLayout(log_tab)
-
-        self.log_text = QTextEdit()
-        self.log_text.setReadOnly(True)
-        self.log_text.setFont(QFont("Consolas", 10))
-        log_layout.addWidget(self.log_text)
-
-        self.btn_clear_log = QPushButton(t("btn_clear_log"))
-        self.btn_clear_log.clicked.connect(self.log_text.clear)
-        log_layout.addWidget(self.btn_clear_log)
-
-        self.tabs.addTab(log_tab, t("tab_execution_log"))
-
-        # 配置頁
-        config_tab = self._create_config_tab()
-        self.tabs.addTab(config_tab, t("tab_browser_config"))
-
-        # 資料庫頁
-        db_tab = self._create_database_tab()
-        self.tabs.addTab(db_tab, t("tab_database"))
-
-        layout.addWidget(self.tabs)
-
-        return panel
-
-    def _create_config_tab(self) -> QWidget:
-        tab = QWidget()
-        layout = QVBoxLayout(tab)
-
-        self.proxy_group = QGroupBox(t("config_proxy"))
-        proxy_layout = QVBoxLayout()
-
-        self.proxy_type = QComboBox()
-        self.proxy_type.addItems([t("config_proxy_none"), "HTTP", "HTTPS", "SOCKS5"])
-        proxy_layout.addWidget(QLabel(t("config_proxy_type")))
-        proxy_layout.addWidget(self.proxy_type)
-
-        self.proxy_input = QLineEdit()
-        self.proxy_input.setPlaceholderText(t("config_proxy_placeholder"))
-        proxy_layout.addWidget(QLabel(t("config_proxy_address")))
-        proxy_layout.addWidget(self.proxy_input)
-
-        self.proxy_group.setLayout(proxy_layout)
-        layout.addWidget(self.proxy_group)
-
-        self.browser_group = QGroupBox(t("config_browser"))
-        browser_layout = QVBoxLayout()
-
-        browser_type_layout = QHBoxLayout()
-        browser_type_layout.addWidget(QLabel(t("config_browser_label")))
-        self.browser_type = QComboBox()
-        self.browser_type.addItem(t("config_browser_chrome"), "chrome")
-        self.browser_type.addItem(t("config_browser_cloak"), "cloakbrowser")
-        browser_type_layout.addWidget(self.browser_type)
-        browser_layout.addLayout(browser_type_layout)
-
-        self.headless_check = QCheckBox(t("config_headless"))
-        browser_layout.addWidget(self.headless_check)
-
-        self.humanize_check = QCheckBox(t("config_humanize"))
-        self.humanize_check.setChecked(True)
-        browser_layout.addWidget(self.humanize_check)
-
-        self.geoip_check = QCheckBox(t("config_geoip"))
-        self.geoip_check.setChecked(False)
-        browser_layout.addWidget(self.geoip_check)
-
-        self.browser_group.setLayout(browser_layout)
-        layout.addWidget(self.browser_group)
-
-        layout.addStretch()
-
-        return tab
-
-    def _create_database_tab(self) -> QWidget:
-        """創建資料庫配置頁面"""
-        tab = QWidget()
-        layout = QVBoxLayout(tab)
-
-        # 配置區
-        self.db_config_group = QGroupBox(t("db_config_title"))
-        db_config_layout = QFormLayout()
-
-        self.db_host = QLineEdit("localhost")
-        db_config_layout.addRow(t("db_host") + ":", self.db_host)
-
-        self.db_port = QSpinBox()
-        self.db_port.setRange(1, 65535)
-        self.db_port.setValue(3306)
-        db_config_layout.addRow(t("db_port") + ":", self.db_port)
-
-        self.db_user = QLineEdit("root")
-        db_config_layout.addRow(t("db_user") + ":", self.db_user)
-
-        self.db_password = QLineEdit("123456")
-        self.db_password.setEchoMode(QLineEdit.Password)
-        db_config_layout.addRow(t("db_password") + ":", self.db_password)
-
-        self.db_database = QLineEdit("trader")
-        db_config_layout.addRow(t("db_database") + ":", self.db_database)
-
-        self.db_config_group.setLayout(db_config_layout)
-        layout.addWidget(self.db_config_group)
-
-        # 操作按鈕
-        btn_layout = QHBoxLayout()
-
-        self.btn_db_test = QPushButton(t("db_btn_test"))
-        self.btn_db_test.clicked.connect(self._test_database)
-        btn_layout.addWidget(self.btn_db_test)
-
-        self.btn_db_connect = QPushButton(t("db_btn_connect"))
-        self.btn_db_connect.clicked.connect(self._connect_database)
-        btn_layout.addWidget(self.btn_db_connect)
-
-        self.btn_db_sync = QPushButton(t("db_btn_sync"))
-        self.btn_db_sync.clicked.connect(self._sync_orders)
-        btn_layout.addWidget(self.btn_db_sync)
-
-        layout.addLayout(btn_layout)
-
-        # 監控控制
-        monitor_group = QGroupBox(t("db_monitor_title"))
-        monitor_layout = QVBoxLayout()
-
-        self.monitor_interval = QSpinBox()
-        self.monitor_interval.setRange(5, 300)
-        self.monitor_interval.setValue(30)
-        self.monitor_interval.setSuffix(" 秒")
-        monitor_layout.addWidget(QLabel(t("db_monitor_interval") + ":"))
-        monitor_layout.addWidget(self.monitor_interval)
-
-        monitor_btn_layout = QHBoxLayout()
-        self.btn_db_start_monitor = QPushButton(t("db_btn_start_monitor"))
-        self.btn_db_start_monitor.clicked.connect(self._start_monitor)
-        monitor_btn_layout.addWidget(self.btn_db_start_monitor)
-
-        self.btn_db_stop_monitor = QPushButton(t("db_btn_stop_monitor"))
-        self.btn_db_stop_monitor.clicked.connect(self._stop_monitor)
-        self.btn_db_stop_monitor.setEnabled(False)
-        monitor_btn_layout.addWidget(self.btn_db_stop_monitor)
-
-        monitor_layout.addLayout(monitor_btn_layout)
-
-        self.monitor_status_label = QLabel(t("db_monitor_stopped"))
-        self.monitor_status_label.setStyleSheet("color: gray;")
-        monitor_layout.addWidget(self.monitor_status_label)
-
-        monitor_group.setLayout(monitor_layout)
-        layout.addWidget(monitor_group)
-
-        # 任務隊列
-        task_queue_group = QGroupBox(t("db_task_queue"))
-        task_queue_layout = QVBoxLayout()
-
-        self.task_queue_table = QTableWidget()
-        self.task_queue_table.setColumnCount(4)
-        self.task_queue_table.setHorizontalHeaderLabels([
-            "ID", t("db_order_no"), t("db_status"), t("db_created_at")
-        ])
-        self.task_queue_table.setMaximumHeight(150)
-        task_queue_layout.addWidget(self.task_queue_table)
-
-        refresh_btn = QPushButton(t("btn_refresh"))
-        refresh_btn.clicked.connect(self._refresh_task_queue)
-        task_queue_layout.addWidget(refresh_btn)
-
-        task_queue_group.setLayout(task_queue_layout)
-        layout.addWidget(task_queue_group)
-
-        layout.addStretch()
-
-        return tab
-
-    def _test_database(self):
-        """測試資料庫連接"""
-        config = self._get_db_config()
-        test_db = DatabaseManager(config)
-        success, msg = test_db.test_connection()
-        
-        if success:
-            QMessageBox.information(self, t("msg_info"), t("db_test_success", msg=msg))
-        else:
-            QMessageBox.warning(self, t("msg_error"), t("db_test_failed", msg=msg))
-
-    def _get_db_config(self) -> dict:
-        """獲取資料庫配置"""
-        return {
-            'host': self.db_host.text().strip() or 'localhost',
-            'port': self.db_port.value(),
-            'user': self.db_user.text().strip() or 'root',
-            'password': self.db_password.text(),
-            'database': self.db_database.text().strip() or 'trader',
-        }
-
-    def _connect_database(self):
-        """連接資料庫"""
-        config = self._get_db_config()
-        self.db_manager = DatabaseManager(config)
-        success, msg = self.db_manager.test_connection()
-        
-        if success:
-            self.db_connected = True
-            self.log(t("db_connected", msg=msg))
-            self._update_db_status()
-            self._refresh_task_queue()
-            QMessageBox.information(self, t("msg_info"), t("db_connect_success"))
-        else:
-            self.db_connected = False
-            self.log(t("db_connect_failed", msg=msg))
-            QMessageBox.warning(self, t("msg_error"), t("db_connect_failed", msg=msg))
-
-    def _sync_orders(self):
-        """同步訂單"""
-        if not self.db_connected or not self.db_manager:
-            QMessageBox.warning(self, t("msg_warning"), t("db_not_connected"))
-            return
-
-        try:
-            count = self.db_manager.sync_direct_orders()
-            self.log(t("db_sync_complete", count=count))
-            self._refresh_task_queue()
-            QMessageBox.information(self, t("msg_info"), t("db_sync_result", count=count))
-        except Exception as e:
-            QMessageBox.warning(self, t("msg_error"), str(e))
-
-    def _refresh_task_queue(self):
-        """刷新任務隊列"""
-        if not self.db_connected or not self.db_manager:
-            return
-
-        try:
-            tasks = self.db_manager.get_pending_tasks(limit=50)
-            self.task_queue_table.setRowCount(len(tasks))
-
-            for i, task in enumerate(tasks):
-                self.task_queue_table.setItem(i, 0, QTableWidgetItem(str(task['id'])))
-                self.task_queue_table.setItem(i, 1, QTableWidgetItem(task['order_no']))
-                self.task_queue_table.setItem(i, 2, QTableWidgetItem(task['status']))
-                self.task_queue_table.setItem(i, 3, QTableWidgetItem(
-                    task['created_at'].strftime('%Y-%m-%d %H:%M:%S') if task.get('created_at') else ''
-                ))
-
-            self._update_db_status()
-        except Exception as e:
-            self.log(f"刷新任務隊列失敗: {e}")
-
-    def _start_monitor(self):
-        """開始監控"""
-        if not self.db_connected or not self.db_manager:
-            QMessageBox.warning(self, t("msg_warning"), t("db_not_connected"))
-            return
-
-        interval = self.monitor_interval.value()
-        
-        if self.order_monitor and self.order_monitor.is_running:
-            self.log(t("db_monitor_already_running"))
-            return
-
-        self.order_monitor = OrderMonitor(self.db_manager, callback=self._on_new_order)
-        self.order_monitor.start(interval=interval)
-        
-        self.btn_db_start_monitor.setEnabled(False)
-        self.btn_db_stop_monitor.setEnabled(True)
-        self.monitor_status_label.setText(t("db_monitor_running", interval=interval))
-        self.monitor_status_label.setStyleSheet("color: green;")
-        
-        self.log(t("db_monitor_started", interval=interval))
-        
-        # 立即執行一次掃描
-        tasks = self.order_monitor.scan_once()
-        if tasks:
-            self.log(t("db_found_tasks", count=len(tasks)))
-
-    def _stop_monitor(self):
-        """停止監控"""
-        if self.order_monitor:
-            self.order_monitor.stop()
-        
-        self.btn_db_start_monitor.setEnabled(True)
-        self.btn_db_stop_monitor.setEnabled(False)
-        self.monitor_status_label.setText(t("db_monitor_stopped"))
-        self.monitor_status_label.setStyleSheet("color: gray;")
-        
-        self.log(t("db_monitor_stopped"))
-
-    def _on_new_order(self, task: dict):
-        """新訂單回調"""
-        order_no = task.get('order_no', '')
-        self.log(t("db_new_order", order_no=order_no))
-        
-        # 自動執行任務
-        self._execute_order_task(order_no)
-
-    def _execute_order_task(self, order_no: str):
-        """執行訂單任務"""
-        if not self.task_manager.tasks:
-            self.log(t("db_no_tasks_configured"))
-            return
-
-        # 選擇第一個任務作為範例
-        task_name = list(self.task_manager.tasks.keys())[0]
-        task = self.task_manager.tasks[task_name]
-        
-        if not task.steps:
-            self.log(t("msg_no_steps"))
-            return
-
-        config = self.get_config()
-
-        self.log("=" * 50)
-        self.log(t("task_start", name=task.name))
-        self.log(t("task_order_no", order_no=order_no))
-
-        # 更新按鈕狀態
-        self.run_btn.setEnabled(False)
-        self.stop_btn.setEnabled(True)
-        self.pause_btn.setEnabled(True)
-
-        # 啟動瀏覽器線程
-        self.browser_thread = BrowserThread(config, task, order_no=order_no)
-        self.browser_thread.log_signal.connect(self.log)
-        self.browser_thread.status_signal.connect(lambda s: self.status_bar.showMessage(s))
-        self.browser_thread.captcha_signal.connect(self.on_captcha_detected)
-        self.browser_thread.captcha_resolved_signal.connect(self.on_captcha_resolved)
-        self.browser_thread.task_complete_signal.connect(self._on_order_task_complete)
-        self.browser_thread.start()
-
-    def _on_order_task_complete(self, success: bool, message: str, order_no: str):
-        """訂單任務完成回調"""
-        if self.db_connected and self.db_manager and order_no:
-            if success:
-                self.db_manager.update_task_status(order_no, 'completed')
-                self.log(t("db_task_completed", order_no=order_no))
-            else:
-                self.db_manager.update_task_status(order_no, 'failed', message)
-                self.log(t("db_task_failed", order_no=order_no, error=message))
-
-        self._refresh_task_queue()
-
-        # 更新按鈕狀態
-        self.run_btn.setEnabled(True)
-        self.stop_btn.setEnabled(False)
-        self.pause_btn.setEnabled(False)
-        self.captcha_btn.setEnabled(False)
-        self.captcha_label.setText("")
-
-    def get_config(self) -> dict:
-        config = {
-            'headless': self.headless_check.isChecked(),
-            'humanize': self.humanize_check.isChecked(),
-            'geoip': self.geoip_check.isChecked(),
-            'browser_type': self.browser_type.currentData(),
-        }
-
-        proxy_type = self.proxy_type.currentText()
-        proxy = self.proxy_input.text().strip()
-        if proxy_type != t("config_proxy_none") and proxy:
-            config['proxy'] = f"{proxy_type.lower()}://{proxy}" if "@" not in proxy else f"{proxy_type.lower()}://{proxy}"
-
-        return config
 
     def refresh_task_list(self):
+        """刷新任務列表"""
         self.task_manager.load_all()
-        self.task_list.clear()
-
-        for domain, task in self.task_manager.tasks.items():
-            item = QListWidgetItem()
-            item.setText(f"🌐 {task.name}\n   {domain}")
-            item.setData(Qt.UserRole, domain)
-            self.task_list.addItem(item)
-
         self.log(t("msg_tasks_loaded", count=len(self.task_manager.tasks)))
 
-    def show_task_detail(self, domain: str):
-        task = self.task_manager.get(domain)
-        if not task:
-            return
-
-        self.detail_label.setText(f"<b>{task.name}</b> - {task.domain}")
-
-        html = f"""
-        <h2>{task.name}</h2>
-        <p><b>{t('detail_domain')}</b> {task.domain}</p>
-        <p><b>{t('detail_description')}</b> {task.description or t('detail_none')}</p>
-        <p><b>{t('detail_steps_count')}</b> {len(task.steps)}</p>
-        <hr>
-        <h3>{t('detail_steps_title')}</h3>
-        <ol>
-        """
-
-        for i, step in enumerate(task.steps):
-            step_info = TaskStep.STEP_TYPES.get(step.type, {})
-            label = t(step_info.get('label_key', ''))
-
-            if step.type == 'goto':
-                detail = f"{t('detail_open')} {step.params.get('url', '')}"
-            elif step.type in ['click', 'hover']:
-                detail = f"{t('detail_click')} {step.params.get('selector', '')}"
-            elif step.type in ['fill', 'type']:
-                detail = f"{t('detail_fill')} {step.params.get('selector', '')} = {step.params.get('value', '')[:30]}..."
-            elif step.type in ['scroll_down', 'scroll_up']:
-                detail = f"{t('detail_scroll')} {step.params.get('amount', 500)}px"
-            elif step.type == 'screenshot':
-                detail = f"{t('detail_screenshot')} {step.params.get('name', '')}"
-            elif step.type == 'wait':
-                detail = f"{t('detail_wait')} {step.params.get('seconds', 1)}{t('detail_seconds')}"
-            elif step.type == 'js':
-                detail = t("detail_exec_js")
-            else:
-                detail = ""
-
-            html += f"<li><b>{label}</b> - {detail}</li>"
-
-        html += "</ol>"
-        self.detail_text.setHtml(html)
-
-    def log(self, message: str):
-        timestamp = datetime.now().strftime("%H:%M:%S")
-        self.log_text.append(f"[{timestamp}] {message}")
-        self.log_text.moveCursor(QTextCursor.End)
-
     def new_task(self):
-        dialog = TaskEditDialog(parent=self)
-        if dialog.exec_():
-            task = dialog.get_task()
-            self.task_manager.save(task)
-            self.refresh_task_list()
-            self.show_task_detail(task.domain)
-            self.log(t("msg_task_created", name=task.name))
+        """新建任務"""
+        from task_dialog import TaskDialog
+        dialog = TaskDialog(self)
+        dialog.exec_()
 
     def edit_task(self, item):
-        if not item:
-            return
-        domain = item.data(Qt.UserRole)
-        task = self.task_manager.get(domain)
-        if not task:
-            return
-
-        dialog = TaskEditDialog(task, self)
-        if dialog.exec_():
-            new_task = dialog.get_task()
-            if new_task.domain != domain:
-                self.task_manager.delete(domain)
-            self.task_manager.save(new_task)
-            self.refresh_task_list()
-            self.show_task_detail(new_task.domain)
-            self.log(t("msg_task_updated", name=new_task.name))
+        """編輯任務"""
+        from task_dialog import TaskDialog
+        dialog = TaskDialog(self)
+        dialog.exec_()
 
     def delete_task(self):
-        item = self.task_list.currentItem()
-        if not item:
-            QMessageBox.warning(self, t("msg_warning"), t("msg_please_select_task"))
-            return
-
-        domain = item.data(Qt.UserRole)
-        task = self.task_manager.get(domain)
-
-        reply = QMessageBox.question(
-            self, t("msg_confirm_delete"),
-            t("msg_confirm_delete_task", name=task.name),
-            QMessageBox.Yes | QMessageBox.No
-        )
-
-        if reply == QMessageBox.Yes:
-            self.task_manager.delete(domain)
-            self.refresh_task_list()
-            self.detail_label.setText(t("select_task_hint"))
-            self.detail_text.setHtml("")
-            self.log(t("msg_task_deleted", name=task.name))
+        """刪除任務"""
+        from task_dialog import TaskDialog
+        dialog = TaskDialog(self)
+        dialog.exec_()
 
     def import_task(self):
+        """導入任務"""
         path, _ = QFileDialog.getOpenFileName(
-            self, t("menu_import_task"), "", "JSON文件 (*.json)"
+            self, t("menu_import_task"), "", "JSON文件 (*.json)")
         )
         if path:
             try:
