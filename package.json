@@ -1,0 +1,9 @@
+{
+    "name": "automation-browser",
+    "version": "1.0.0",
+    "description": "Windows自动化浏览器工具",
+    "requirements": [
+        "cloakbrowser>=0.3.0",
+        "PyQt5>=5.15.0"
+    ]
+}

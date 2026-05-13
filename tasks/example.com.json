@@ -1,0 +1,40 @@
+{
+  "name": "示例网站登录",
+  "domain": "https://example.com",
+  "description": "演示任务：打开网站、填写表单、点击提交",
+  "enabled": true,
+  "steps": [
+    {
+      "type": "goto",
+      "url": "https://example.com",
+      "wait": "3"
+    },
+    {
+      "type": "click",
+      "selector": "#login-link",
+      "wait": "1"
+    },
+    {
+      "type": "fill",
+      "selector": "#username",
+      "value": "testuser",
+      "wait": "0.5"
+    },
+    {
+      "type": "fill",
+      "selector": "#password",
+      "value": "password123",
+      "wait": "0.5"
+    },
+    {
+      "type": "click",
+      "selector": "#login-btn",
+      "wait": "2"
+    },
+    {
+      "type": "screenshot",
+      "name": "login_result",
+      "wait": "1"
+    }
+  ]
+}

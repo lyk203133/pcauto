@@ -1,0 +1,44 @@
+[
+    {
+        "type": "goto",
+        "url": "https://example.com",
+        "selector": "",
+        "value": "",
+        "wait": 2
+    },
+    {
+        "type": "fill",
+        "selector": "#username",
+        "value": "testuser",
+        "wait": 0.5
+    },
+    {
+        "type": "fill",
+        "selector": "#password",
+        "value": "password123",
+        "wait": 0.5
+    },
+    {
+        "type": "click",
+        "selector": "#login-btn",
+        "wait": 2
+    },
+    {
+        "type": "goto",
+        "url": "https://example.com/form",
+        "selector": "",
+        "value": "",
+        "wait": 2
+    },
+    {
+        "type": "fill",
+        "selector": "#name",
+        "value": "张三",
+        "wait": 0.5
+    },
+    {
+        "type": "click",
+        "selector": "#submit",
+        "wait": 3
+    }
+]
