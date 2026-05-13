@@ -25,7 +25,8 @@ from PyQt5.QtWidgets import (
     QStatusBar, QMenuBar, QMenu, QAction, QTabWidget, QTableWidget,
     QTableWidgetItem, QHeaderView, QSplitter, QToolBar, QListWidget,
     QListWidgetItem, QDialog, QFormLayout, QDialogButtonBox, QTextBrowser,
-    QFrame, QScrollArea, QSizePolicy, QDoubleSpinBox
+    QFrame, QScrollArea, QSizePolicy, QDoubleSpinBox, QDockWidget,
+    QStackedWidget, QGraphicsDropShadowEffect
 )
 from PyQt5.QtCore import QThread, pyqtSignal, Qt, QSize, QDir, QTimer
 from PyQt5.QtGui import QFont, QIcon, QTextCursor, QColor
@@ -1144,27 +1145,20 @@ class MainWindow(QMainWindow):
 
     def init_ui(self):
         self.setWindowTitle(t("app_title"))
-        self.setMinimumSize(1200, 800)
+        self.setMinimumSize(1000, 700)
 
         self._create_menu()
         self._create_toolbar()
 
+        # 創建左側工具列（停靠面板）
+        self._create_left_dock()
+
+        # 創建主內容區域
         central = QWidget()
         self.setCentralWidget(central)
-        layout = QHBoxLayout(central)
+        self._create_central_content(central)
 
-        left_panel = self._create_task_panel()
-        right_panel = self._create_work_panel()
-
-        splitter = QSplitter(Qt.Horizontal)
-        splitter.addWidget(left_panel)
-        splitter.addWidget(right_panel)
-        splitter.setStretchFactor(0, 1)
-        splitter.setStretchFactor(1, 3)
-        splitter.setSizes([300, 900])
-
-        layout.addWidget(splitter)
-
+        # 狀態列
         self.status_bar = QStatusBar()
         self.setStatusBar(self.status_bar)
         self.status_bar.showMessage(t("ready"))
@@ -1177,6 +1171,358 @@ class MainWindow(QMainWindow):
         self.db_status_label = QLabel(t("db_status_disconnected"))
         self.db_status_label.setStyleSheet("color: gray;")
         self.status_bar.addPermanentWidget(self.db_status_label)
+
+        # 定位視窗到螢幕右側
+        self._position_window_right()
+
+    def _position_window_right(self):
+        """將視窗定位到螢幕右側"""
+        screen = QApplication.desktop().screenGeometry()
+        # 視窗放在右邊 40% 的區域
+        width = int(screen.width() * 0.45)
+        height = screen.height()
+        x = screen.width() - width
+        y = 0
+        self.setGeometry(x, y, width, height)
+
+    def _create_left_dock(self):
+        """創建左側工具列停靠面板"""
+        dock = QDockWidget("", self)
+        dock.setFeatures(QDockWidget.NoDockWidgetFeatures)
+        dock.setTitleBarWidget(QWidget())  # 隱藏標題列
+
+        # 左側工具列容器
+        dock_content = QWidget()
+        dock_content.setFixedWidth(80)
+        dock_layout = QVBoxLayout(dock_content)
+        dock_layout.setContentsMargins(5, 15, 5, 15)
+        dock_layout.setSpacing(10)
+
+        # 標題
+        title = QLabel("🚀")
+        title.setAlignment(Qt.AlignCenter)
+        title.setStyleSheet("font-size: 24px;")
+        dock_layout.addWidget(title)
+
+        dock_layout.addSpacing(10)
+
+        # 開瀏覽器按鈕
+        self.btn_launch_browser = QPushButton("🌐\n瀏覽器")
+        self.btn_launch_browser.setFixedHeight(60)
+        self.btn_launch_browser.clicked.connect(self._open_browser_dialog)
+        self.btn_launch_browser.setStyleSheet("""
+            QPushButton {
+                font-size: 12px;
+                border: 2px solid #4CAF50;
+                border-radius: 8px;
+                background-color: #E8F5E9;
+            }
+            QPushButton:hover {
+                background-color: #C8E6C9;
+            }
+        """)
+        dock_layout.addWidget(self.btn_launch_browser)
+
+        # 任務管理按鈕
+        self.btn_task_manager = QPushButton("📋\n任務")
+        self.btn_task_manager.setFixedHeight(60)
+        self.btn_task_manager.clicked.connect(self._open_task_dialog)
+        self.btn_task_manager.setStyleSheet("""
+            QPushButton {
+                font-size: 12px;
+                border: 2px solid #2196F3;
+                border-radius: 8px;
+                background-color: #E3F2FD;
+            }
+            QPushButton:hover {
+                background-color: #BBDEFB;
+            }
+        """)
+        dock_layout.addWidget(self.btn_task_manager)
+
+        # 查看日誌按鈕
+        self.btn_view_logs = QPushButton("📝\n日誌")
+        self.btn_view_logs.setFixedHeight(60)
+        self.btn_view_logs.clicked.connect(self._open_log_dialog)
+        self.btn_view_logs.setStyleSheet("""
+            QPushButton {
+                font-size: 12px;
+                border: 2px solid #FF9800;
+                border-radius: 8px;
+                background-color: #FFF3E0;
+            }
+            QPushButton:hover {
+                background-color: #FFE0B2;
+            }
+        """)
+        dock_layout.addWidget(self.btn_view_logs)
+
+        # 設定按鈕
+        self.btn_settings = QPushButton("⚙️\n設定")
+        self.btn_settings.setFixedHeight(60)
+        self.btn_settings.clicked.connect(self._open_settings_dialog)
+        self.btn_settings.setStyleSheet("""
+            QPushButton {
+                font-size: 12px;
+                border: 2px solid #9C27B0;
+                border-radius: 8px;
+                background-color: #F3E5F5;
+            }
+            QPushButton:hover {
+                background-color: #E1BEE7;
+            }
+        """)
+        dock_layout.addWidget(self.btn_settings)
+
+        # 資料庫按鈕
+        self.btn_database = QPushButton("💾\n資料庫")
+        self.btn_database.setFixedHeight(60)
+        self.btn_database.clicked.connect(self._open_database_dialog)
+        self.btn_database.setStyleSheet("""
+            QPushButton {
+                font-size: 12px;
+                border: 2px solid #607D8B;
+                border-radius: 8px;
+                background-color: #ECEFF1;
+            }
+            QPushButton:hover {
+                background-color: #CFD8DC;
+            }
+        """)
+        dock_layout.addWidget(self.btn_database)
+
+        dock_layout.addStretch()
+
+        # 語言切換
+        lang_label = QLabel(f"🌐 {t('menu_language')}")
+        lang_label.setAlignment(Qt.AlignCenter)
+        lang_label.setStyleSheet("font-size: 11px; color: #666;")
+        dock_layout.addWidget(lang_label)
+
+        self.lang_combo_dock = QComboBox()
+        self.lang_combo_dock.setFixedWidth(70)
+        self.lang_combo_dock.setStyleSheet("font-size: 11px;")
+        for lang_code, lang_name in i18n.t.lang_names.items():
+            self.lang_combo_dock.addItem(lang_name, lang_code)
+        current_lang = get_current_lang()
+        idx = self.lang_combo_dock.findData(current_lang)
+        if idx >= 0:
+            self.lang_combo_dock.setCurrentIndex(idx)
+        self.lang_combo_dock.currentIndexChanged.connect(self._on_language_changed)
+        dock_layout.addWidget(self.lang_combo_dock)
+
+        dock.setWidget(dock_content)
+        self.addDockWidget(Qt.LeftDockWidgetArea, dock)
+        self.left_dock = dock
+
+    def _create_central_content(self, parent):
+        """創建主內容區域"""
+        layout = QVBoxLayout(parent)
+        layout.setContentsMargins(15, 15, 15, 15)
+        layout.setSpacing(15)
+
+        # 頂部狀態卡片
+        status_card = QWidget()
+        status_card.setStyleSheet("""
+            QWidget {
+                background-color: #f5f5f5;
+                border-radius: 10px;
+                border: 1px solid #ddd;
+            }
+        """)
+        status_layout = QHBoxLayout(status_card)
+
+        # 運行狀態
+        self.status_indicator = QLabel("⚪ " + t("toolbar_stop"))
+        self.status_indicator.setStyleSheet("font-size: 16px; font-weight: bold; color: #666;")
+        status_layout.addWidget(self.status_indicator)
+
+        status_layout.addStretch()
+
+        # 當前任務
+        self.current_task_label = QLabel(t("select_task_hint"))
+        self.current_task_label.setStyleSheet("font-size: 14px; color: #333;")
+        status_layout.addWidget(self.current_task_label)
+
+        layout.addWidget(status_card)
+
+        # 操作區域
+        ops_card = QWidget()
+        ops_card.setStyleSheet("""
+            QWidget {
+                background-color: white;
+                border-radius: 10px;
+                border: 1px solid #ddd;
+            }
+        """)
+        ops_layout = QVBoxLayout(ops_card)
+
+        ops_title = QLabel("▶️ " + t("panel_operations"))
+        ops_title.setStyleSheet("font-size: 16px; font-weight: bold; color: #333; padding: 5px;")
+        ops_layout.addWidget(ops_title)
+
+        # 操作按鈕行
+        ops_btns = QHBoxLayout()
+
+        self.run_btn = QPushButton("▶ " + t("toolbar_run"))
+        self.run_btn.setFixedHeight(45)
+        self.run_btn.setStyleSheet("""
+            QPushButton {
+                background-color: #4CAF50;
+                color: white;
+                border: none;
+                border-radius: 8px;
+                font-size: 14px;
+                font-weight: bold;
+            }
+            QPushButton:hover { background-color: #45a049; }
+            QPushButton:disabled { background-color: #ccc; }
+        """)
+        self.run_btn.clicked.connect(self.run_task)
+        ops_btns.addWidget(self.run_btn)
+
+        self.stop_btn = QPushButton("⏹ " + t("toolbar_stop"))
+        self.stop_btn.setFixedHeight(45)
+        self.stop_btn.setEnabled(False)
+        self.stop_btn.setStyleSheet("""
+            QPushButton {
+                background-color: #f44336;
+                color: white;
+                border: none;
+                border-radius: 8px;
+                font-size: 14px;
+                font-weight: bold;
+            }
+            QPushButton:hover { background-color: #da190b; }
+            QPushButton:disabled { background-color: #ccc; }
+        """)
+        self.stop_btn.clicked.connect(self.stop_task)
+        ops_btns.addWidget(self.stop_btn)
+
+        self.pause_btn = QPushButton("⏸ " + t("toolbar_pause"))
+        self.pause_btn.setFixedHeight(45)
+        self.pause_btn.setEnabled(False)
+        self.pause_btn.setStyleSheet("""
+            QPushButton {
+                background-color: #FF9800;
+                color: white;
+                border: none;
+                border-radius: 8px;
+                font-size: 14px;
+                font-weight: bold;
+            }
+            QPushButton:hover { background-color: #e68a00; }
+            QPushButton:disabled { background-color: #ccc; }
+        """)
+        self.pause_btn.clicked.connect(self.pause_task)
+        ops_btns.addWidget(self.pause_btn)
+
+        self.captcha_btn = QPushButton("☑ " + t("toolbar_captcha_resolved"))
+        self.captcha_btn.setFixedHeight(45)
+        self.captcha_btn.setEnabled(False)
+        self.captcha_btn.setStyleSheet("""
+            QPushButton {
+                background-color: #9C27B0;
+                color: white;
+                border: none;
+                border-radius: 8px;
+                font-size: 14px;
+                font-weight: bold;
+            }
+            QPushButton:hover { background-color: #7B1FA2; }
+            QPushButton:disabled { background-color: #ccc; }
+        """)
+        self.captcha_btn.clicked.connect(self.resolve_captcha)
+        ops_btns.addWidget(self.captcha_btn)
+
+        ops_layout.addLayout(ops_btns)
+        layout.addWidget(ops_card)
+
+        # 日誌預覽區域
+        log_card = QWidget()
+        log_card.setStyleSheet("""
+            QWidget {
+                background-color: white;
+                border-radius: 10px;
+                border: 1px solid #ddd;
+            }
+        """)
+        log_layout = QVBoxLayout(log_card)
+
+        log_header = QHBoxLayout()
+        log_title = QLabel("📋 " + t("tab_execution_log"))
+        log_title.setStyleSheet("font-size: 16px; font-weight: bold; color: #333; padding: 5px;")
+        log_header.addWidget(log_title)
+
+        log_header.addStretch()
+
+        self.btn_clear_log = QPushButton(t("btn_clear_log"))
+        self.btn_clear_log.setFixedSize(80, 30)
+        self.btn_clear_log.clicked.connect(self.clear_log)
+        log_header.addWidget(self.btn_clear_log)
+
+        log_layout.addLayout(log_header)
+
+        self.log_display = QTextEdit()
+        self.log_display.setReadOnly(True)
+        self.log_display.setStyleSheet("""
+            QTextEdit {
+                background-color: #1e1e1e;
+                color: #d4d4d4;
+                font-family: 'Consolas', 'Monaco', monospace;
+                font-size: 12px;
+                border-radius: 5px;
+                padding: 5px;
+            }
+        """)
+        log_layout.addWidget(self.log_display)
+
+        layout.addWidget(log_card)
+
+    def _open_browser_dialog(self):
+        """打開瀏覽器對話框"""
+        from browser_dialog import BrowserDialog
+        dialog = BrowserDialog(self)
+        dialog.exec_()
+
+    def _open_task_dialog(self):
+        """打開任務管理對話框"""
+        from task_dialog import TaskDialog
+        dialog = TaskDialog(self)
+        dialog.exec_()
+
+    def _open_log_dialog(self):
+        """打開日誌查看對話框"""
+        from log_dialog import LogDialog
+        dialog = LogDialog(self)
+        dialog.exec_()
+
+    def _open_settings_dialog(self):
+        """打開設定對話框"""
+        from settings_dialog import SettingsDialog
+        dialog = SettingsDialog(self)
+        dialog.exec_()
+
+    def _open_database_dialog(self):
+        """打開資料庫對話框"""
+        from db_dialog import DatabaseDialog
+        dialog = DatabaseDialog(self)
+        dialog.exec_()
+
+    def log(self, msg):
+        """添加日誌（保持向後兼容）"""
+        if hasattr(self, 'log_display'):
+            timestamp = time.strftime("%H:%M:%S")
+            self.log_display.append(f"[{timestamp}] {msg}")
+            # 滾動到底部
+            cursor = self.log_display.textCursor()
+            cursor.movePosition(QTextCursor.End)
+            self.log_display.setTextCursor(cursor)
+
+    def clear_log(self):
+        """清除日誌"""
+        if hasattr(self, 'log_display'):
+            self.log_display.clear()
 
     def _create_menu(self):
         menubar = self.menuBar()
@@ -1269,51 +1615,38 @@ class MainWindow(QMainWindow):
         self._create_toolbar()
 
         self.setWindowTitle(t("app_title"))
-        self.task_panel_title.setText(t("panel_task_list"))
 
-        self.btn_new.setText(t("btn_new"))
-        self.btn_edit.setText(t("btn_edit"))
-        self.btn_delete.setText(t("btn_delete"))
-        self.btn_refresh.setText(t("btn_refresh"))
-
-        self.run_btn.setText(t("toolbar_run"))
-        self.stop_btn.setText(t("toolbar_stop"))
-        self.pause_btn.setText(t("toolbar_pause"))
-        self.captcha_btn.setText(t("toolbar_captcha_resolved"))
-
-        # 更新工具列語言標籤
-        self.lang_combo.blockSignals(True)
-        current_lang = get_current_lang()
-        idx = self.lang_combo.findData(current_lang)
-        if idx >= 0:
-            self.lang_combo.setCurrentIndex(idx)
-        self.lang_combo.blockSignals(False)
-
-        self.tabs.setTabText(0, t("tab_task_detail"))
-        self.tabs.setTabText(1, t("tab_execution_log"))
-        self.tabs.setTabText(2, t("tab_browser_config"))
-        self.tabs.setTabText(3, t("tab_database"))
-
-        self.detail_label.setText(t("select_task_hint"))
+        # 更新主內容區域
+        self.run_btn.setText("▶ " + t("toolbar_run"))
+        self.stop_btn.setText("⏹ " + t("toolbar_stop"))
+        self.pause_btn.setText("⏸ " + t("toolbar_pause"))
+        self.captcha_btn.setText("☑ " + t("toolbar_captcha_resolved"))
         self.btn_clear_log.setText(t("btn_clear_log"))
 
-        self.proxy_group.setTitle(t("config_proxy"))
-        self.browser_group.setTitle(t("config_browser"))
-        self.browser_type.setItemText(0, t("config_browser_chrome"))
-        self.browser_type.setItemText(1, t("config_browser_cloak"))
-        self.headless_check.setText(t("config_headless"))
-        self.humanize_check.setText(t("config_humanize"))
-        self.geoip_check.setText(t("config_geoip"))
-        self.proxy_type.model().item(0).setText(t("config_proxy_none"))
+        # 更新左側工具列按鈕文字
+        self.btn_launch_browser.setText("🌐\n" + t("btn_browser"))
+        self.btn_task_manager.setText("📋\n" + t("btn_tasks"))
+        self.btn_view_logs.setText("📝\n" + t("btn_logs"))
+        self.btn_settings.setText("⚙️\n" + t("btn_settings"))
+        self.btn_database.setText("💾\n" + t("btn_database"))
 
-        # 更新資料庫面板
-        if hasattr(self, 'db_config_group'):
-            self.db_config_group.setTitle(t("db_config_title"))
-            self.btn_db_test.setText(t("db_btn_test"))
-            self.btn_db_connect.setText(t("db_btn_connect"))
-            self.btn_db_sync.setText(t("db_btn_sync"))
-            self.btn_db_start_monitor.setText(t("db_btn_start_monitor"))
-            self.btn_db_stop_monitor.setText(t("db_btn_stop_monitor"))
+        # 更新左側 dock 語言下拉選單
+        if hasattr(self, 'lang_combo_dock'):
+            self.lang_combo_dock.blockSignals(True)
+            current_lang = get_current_lang()
+            idx = self.lang_combo_dock.findData(current_lang)
+            if idx >= 0:
+                self.lang_combo_dock.setCurrentIndex(idx)
+            self.lang_combo_dock.blockSignals(False)
+
+        # 更新工具列語言下拉選單
+        if hasattr(self, 'lang_combo'):
+            self.lang_combo.blockSignals(True)
+            current_lang = get_current_lang()
+            idx = self.lang_combo.findData(current_lang)
+            if idx >= 0:
+                self.lang_combo.setCurrentIndex(idx)
+            self.lang_combo.blockSignals(False)
 
         self.status_bar.showMessage(t("ready"))
         self._update_db_status()

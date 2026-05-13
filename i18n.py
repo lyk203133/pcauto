@@ -34,10 +34,18 @@ TRANSLATIONS: Dict[str, Dict[str, str]] = {
 
         # === 任務面板 ===
         "panel_task_list": "📋 網站任務列表",
+        "panel_operations": "⚡ 操作",
         "btn_new": "➕ 新建",
         "btn_edit": "✏️ 編輯",
         "btn_delete": "🗑 刪除",
         "btn_refresh": "🔄 刷新列表",
+
+        # === 左側工具列按鈕 ===
+        "btn_browser": "瀏覽器",
+        "btn_tasks": "任務",
+        "btn_logs": "日誌",
+        "btn_settings": "設定",
+        "btn_database": "資料庫",
 
         # === 工作面板 ===
         "tab_task_detail": "📄 任務詳情",
@@ -344,10 +352,18 @@ TRANSLATIONS: Dict[str, Dict[str, str]] = {
 
         # === Task Panel ===
         "panel_task_list": "📋 Website Task List",
+        "panel_operations": "⚡ Operations",
         "btn_new": "➕ New",
         "btn_edit": "✏️ Edit",
         "btn_delete": "🗑 Delete",
         "btn_refresh": "🔄 Refresh List",
+
+        # === Left Dock Buttons ===
+        "btn_browser": "Browser",
+        "btn_tasks": "Tasks",
+        "btn_logs": "Logs",
+        "btn_settings": "Settings",
+        "btn_database": "Database",
 
         # === Work Panel ===
         "tab_task_detail": "📄 Task Details",
@@ -654,10 +670,18 @@ TRANSLATIONS: Dict[str, Dict[str, str]] = {
 
         # === Bảng tác vụ ===
         "panel_task_list": "📋 Danh Sách Tác Vụ Website",
+        "panel_operations": "⚡ Thao tác",
         "btn_new": "➕ Tạo Mới",
         "btn_edit": "✏️ Chỉnh sửa",
         "btn_delete": "🗑 Xóa",
         "btn_refresh": "🔄 Làm mới danh sách",
+
+        # === Nút dock bên trái ===
+        "btn_browser": "Trình duyệt",
+        "btn_tasks": "Tác vụ",
+        "btn_logs": "Nhật ký",
+        "btn_settings": "Cài đặt",
+        "btn_database": "Cơ sở dữ liệu",
 
         # === Bảng làm việc ===
         "tab_task_detail": "📄 Chi Tiết Tác Vụ",
