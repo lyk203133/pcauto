@@ -1250,6 +1250,15 @@ class MainWindow(QMainWindow):
 
         self._rebuild_ui()
 
+    def _on_language_changed(self, index):
+        """工具列語言下拉選單切換"""
+        lang_code = self.lang_combo.currentData()
+        if lang_code and lang_code != get_current_lang():
+            set_language(lang_code)
+            for code, action in self.lang_actions.items():
+                action.setChecked(code == lang_code)
+            self._rebuild_ui()
+
     def _rebuild_ui(self):
         """重新構建 UI（語言切換後）"""
         self.menuBar().clear()
@@ -1271,6 +1280,14 @@ class MainWindow(QMainWindow):
         self.stop_btn.setText(t("toolbar_stop"))
         self.pause_btn.setText(t("toolbar_pause"))
         self.captcha_btn.setText(t("toolbar_captcha_resolved"))
+
+        # 更新工具列語言標籤
+        self.lang_combo.blockSignals(True)
+        current_lang = get_current_lang()
+        idx = self.lang_combo.findData(current_lang)
+        if idx >= 0:
+            self.lang_combo.setCurrentIndex(idx)
+        self.lang_combo.blockSignals(False)
 
         self.tabs.setTabText(0, t("tab_task_detail"))
         self.tabs.setTabText(1, t("tab_execution_log"))
@@ -1326,6 +1343,23 @@ class MainWindow(QMainWindow):
         self.captcha_btn.clicked.connect(self.resolve_captcha)
         self.captcha_btn.setEnabled(False)
         toolbar.addWidget(self.captcha_btn)
+
+        toolbar.addSeparator()
+
+        # 語言切換下拉選單
+        lang_label = QLabel(f"🌐 {t('menu_language')}: ")
+        toolbar.addWidget(lang_label)
+
+        self.lang_combo = QComboBox()
+        self.lang_combo.setFixedWidth(120)
+        for lang_code, lang_name in i18n.t.lang_names.items():
+            self.lang_combo.addItem(lang_name, lang_code)
+        current_lang = get_current_lang()
+        idx = self.lang_combo.findData(current_lang)
+        if idx >= 0:
+            self.lang_combo.setCurrentIndex(idx)
+        self.lang_combo.currentIndexChanged.connect(self._on_language_changed)
+        toolbar.addWidget(self.lang_combo)
 
     def _create_task_panel(self) -> QWidget:
         panel = QWidget()
