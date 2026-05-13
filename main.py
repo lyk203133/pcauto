@@ -4,6 +4,7 @@
 支持驗證碼檢測和用戶介入填寫
 支持多國語言：繁體中文、英文、越南文
 支持參數下拉選項預設
+支持 MySQL 資料庫訂單監控
 
 任務設計：一個網站 = 一個任務文件
 """
@@ -26,7 +27,7 @@ from PyQt5.QtWidgets import (
     QListWidgetItem, QDialog, QFormLayout, QDialogButtonBox, QTextBrowser,
     QFrame, QScrollArea, QSizePolicy, QDoubleSpinBox
 )
-from PyQt5.QtCore import QThread, pyqtSignal, Qt, QSize, QDir
+from PyQt5.QtCore import QThread, pyqtSignal, Qt, QSize, QDir, QTimer
 from PyQt5.QtGui import QFont, QIcon, QTextCursor, QColor
 
 from cloakbrowser import launch
@@ -36,6 +37,7 @@ from i18n import (
     get_scroll_presets, get_wait_presets, get_selector_types,
     get_common_selectors, get_step_wait_presets, get_preset_custom_key
 )
+from database import DatabaseManager, OrderMonitor, DEFAULT_DB_CONFIG
 
 # 配置日誌
 logging.basicConfig(
@@ -171,19 +173,20 @@ class BrowserThread(QThread):
     status_signal = pyqtSignal(str)
     captcha_signal = pyqtSignal(str)
     captcha_resolved_signal = pyqtSignal()
-    task_complete_signal = pyqtSignal(bool, str)
+    task_complete_signal = pyqtSignal(bool, str, str)  # success, message, order_no
     step_signal = pyqtSignal(int, int)  # 當前步驟, 總步驟
 
-    def __init__(self, config: dict, task: SiteTask):
+    def __init__(self, config: dict, task: SiteTask, order_no: str = None):
         super().__init__()
         self.config = config
         self.task = task
+        self.order_no = order_no  # 訂單號
         self.browser = None
         self.page = None
         self.is_running = False
         self.is_paused = False
         self.should_stop = False
-        self._stop_requested = False  # 立即停止請求
+        self._stop_requested = False
 
     def run(self):
         self.is_running = True
@@ -201,7 +204,7 @@ class BrowserThread(QThread):
             error_msg = str(e)
             if "Broken pipe" in error_msg or "connection" in error_msg.lower():
                 self.log_signal.emit(t("error_network_hint"))
-            self.task_complete_signal.emit(False, error_msg)
+            self.task_complete_signal.emit(False, error_msg, self.order_no)
         finally:
             self._cleanup()
 
@@ -350,6 +353,8 @@ class BrowserThread(QThread):
         total = len(steps)
 
         self.log_signal.emit(t("task_start", name=self.task.name))
+        if self.order_no:
+            self.log_signal.emit(t("task_order_no", order_no=self.order_no))
         self.log_signal.emit(t("task_target", domain=self.task.domain))
         self.log_signal.emit(t("task_total_steps", count=total))
         self.log_signal.emit("-" * 40)
@@ -382,7 +387,7 @@ class BrowserThread(QThread):
         if not self.should_stop:
             self.log_signal.emit("-" * 40)
             self.log_signal.emit(t("msg_task_complete"))
-            self.task_complete_signal.emit(True, t("msg_task_complete"))
+            self.task_complete_signal.emit(True, t("msg_task_complete"), self.order_no)
 
     def _check_captcha(self) -> bool:
         captcha_selectors = [
@@ -615,7 +620,6 @@ class StepEditDialog(QDialog):
             if self.wait_combo.itemData(i) == value:
                 self.wait_combo.setCurrentIndex(i)
                 return
-        # 如果找不到，設置為自訂
         self.wait_combo.setCurrentText(value)
 
     def _on_type_changed(self):
@@ -623,7 +627,6 @@ class StepEditDialog(QDialog):
 
     def _update_params_ui(self):
         """更新參數 UI"""
-        # 清除舊參數
         while self.params_layout.count():
             child = self.params_layout.takeAt(0)
             if child.widget():
@@ -650,9 +653,7 @@ class StepEditDialog(QDialog):
         layout = QHBoxLayout(widget)
         layout.setContentsMargins(0, 5, 0, 5)
 
-        # 根據不同步驟類型和參數創建不同的控件
         if step_type == 'goto' and param == 'url':
-            # URL 輸入
             label = QLabel(t("param_url") + ":")
             input_widget = QLineEdit()
             input_widget.setText(self.step.params.get(param, ''))
@@ -662,15 +663,12 @@ class StepEditDialog(QDialog):
             self.param_widgets[param] = input_widget
 
         elif step_type in ['click', 'hover'] and param == 'selector':
-            # 選擇器下拉 + 輸入
             self._add_selector_widget(layout, param)
 
         elif step_type in ['fill', 'type'] and param == 'selector':
-            # 選擇器下拉 + 輸入
             self._add_selector_widget(layout, param)
 
         elif step_type in ['fill', 'type'] and param == 'value':
-            # 文本內容輸入
             label = QLabel(t("param_value") + ":")
             input_widget = QLineEdit()
             input_widget.setText(self.step.params.get(param, ''))
@@ -680,17 +678,14 @@ class StepEditDialog(QDialog):
             self.param_widgets[param] = input_widget
 
         elif step_type in ['scroll_down', 'scroll_up'] and param == 'amount':
-            # 滾動量下拉
             label = QLabel(t("param_amount") + ":")
             combo = QComboBox()
             combo.setEditable(True)
             combo.setInsertPolicy(QComboBox.NoInsert)
 
-            # 填充預設
             for val, display in get_scroll_presets():
                 combo.addItem(display, val)
 
-            # 設置當前值
             current_val = self.step.params.get(param, '500')
             found = False
             for i in range(combo.count()):
@@ -706,7 +701,6 @@ class StepEditDialog(QDialog):
             self.param_widgets[param] = combo
 
         elif step_type == 'screenshot' and param == 'name':
-            # 截圖文件名輸入
             label = QLabel(t("param_name") + ":")
             input_widget = QLineEdit()
             input_widget.setText(self.step.params.get(param, ''))
@@ -716,7 +710,6 @@ class StepEditDialog(QDialog):
             self.param_widgets[param] = input_widget
 
         elif step_type == 'wait' and param == 'seconds':
-            # 等待秒數下拉
             label = QLabel(t("param_seconds") + ":")
             combo = QComboBox()
             combo.setEditable(True)
@@ -740,7 +733,6 @@ class StepEditDialog(QDialog):
             self.param_widgets[param] = combo
 
         elif step_type == 'js' and param == 'code':
-            # JS 代碼輸入（TextEdit）
             label = QLabel(t("param_code") + ":")
             input_widget = QTextEdit()
             input_widget.setPlainText(self.step.params.get(param, ''))
@@ -752,7 +744,6 @@ class StepEditDialog(QDialog):
             self.param_widgets[param] = input_widget
 
         else:
-            # 通用文本輸入
             label = QLabel(f"{param}:")
             input_widget = QLineEdit()
             input_widget.setText(self.step.params.get(param, ''))
@@ -764,30 +755,25 @@ class StepEditDialog(QDialog):
 
     def _add_selector_widget(self, layout: QHBoxLayout, param: str):
         """添加選擇器控件（下拉 + 輸入）"""
-        # 標籤
         label = QLabel(t("param_selector") + ":")
         layout.addWidget(label)
 
-        # 選擇器類型下拉
         type_combo = QComboBox()
         for val, display in get_selector_types():
             type_combo.addItem(display, val)
         type_combo.currentIndexChanged.connect(self._on_selector_type_changed)
         layout.addWidget(type_combo)
 
-        # 常用選擇器下拉
         selector_combo = QComboBox()
         selector_combo.setEditable(True)
         selector_combo.setInsertPolicy(QComboBox.NoInsert)
         self._populate_common_selectors(selector_combo)
 
-        # 設置當前值
         current_val = self.step.params.get(param, '')
         self._set_selector_value(selector_combo, current_val)
 
         layout.addWidget(selector_combo)
 
-        # 保存控件引用
         if param not in self.param_widgets:
             self.param_widgets[param] = {}
 
@@ -813,23 +799,18 @@ class StepEditDialog(QDialog):
         combo.setCurrentText(value)
 
     def _on_selector_type_changed(self):
-        """選擇器類型改變時的處理"""
-        # 可以根據選擇的類型調整常用選擇器列表
         pass
 
     def get_step(self) -> TaskStep:
         step_type = self.type_combo.currentData()
         params = {}
 
-        # 獲取各參數值
         for param, widget in self.param_widgets.items():
             if isinstance(widget, dict):
-                # 選擇器控件
                 selector_combo = widget.get('selector')
                 if selector_combo:
                     params[param] = selector_combo.currentText()
             elif isinstance(widget, QComboBox):
-                # 下拉框 - 獲取實際值
                 data = widget.currentData()
                 if data and data != "CUSTOM":
                     params[param] = data
@@ -842,7 +823,6 @@ class StepEditDialog(QDialog):
             else:
                 params[param] = str(widget)
 
-        # 獲取等待時間
         wait_data = self.wait_combo.currentData()
         if wait_data and wait_data != "CUSTOM":
             params['wait'] = wait_data
@@ -861,7 +841,7 @@ class TaskEditDialog(QDialog):
     def __init__(self, task=None, parent=None):
         super().__init__(parent)
         self.task = task or SiteTask()
-        self.step_dialogs = []  # 保存步驟對話框引用
+        self.step_dialogs = []
         self.setup_ui()
 
     def setup_ui(self):
@@ -895,7 +875,6 @@ class TaskEditDialog(QDialog):
         steps_group = QGroupBox(t("dialog_steps"))
         steps_layout = QVBoxLayout()
 
-        # 步驟表格（簡化顯示）
         self.steps_table = QTableWidget()
         self.steps_table.setColumnCount(4)
         self.steps_table.setHorizontalHeaderLabels([
@@ -910,13 +889,11 @@ class TaskEditDialog(QDialog):
         self.steps_table.setColumnWidth(3, 80)
         self.steps_table.setMaximumHeight(250)
 
-        # 加載現有步驟
         for i, step in enumerate(self.task.steps):
             self._add_step_row(i, step)
 
         steps_layout.addWidget(self.steps_table)
 
-        # 步驟按鈕
         btn_layout = QHBoxLayout()
 
         add_btn = QPushButton(t("dialog_btn_add_step"))
@@ -943,7 +920,6 @@ class TaskEditDialog(QDialog):
         steps_group.setLayout(steps_layout)
         layout.addWidget(steps_group)
 
-        # 確定/取消
         btn_box = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel)
         btn_box.accepted.connect(self._save)
         btn_box.rejected.connect(self.reject)
@@ -952,17 +928,12 @@ class TaskEditDialog(QDialog):
     def _add_step_row(self, row, step):
         self.steps_table.insertRow(row)
 
-        # 序號
         self.steps_table.setItem(row, 0, QTableWidgetItem(str(row + 1)))
-
-        # 類型
         self.steps_table.setItem(row, 1, QTableWidgetItem(step.get_label()))
 
-        # 參數摘要
         params_text = self._get_params_summary(step)
         self.steps_table.setItem(row, 2, QTableWidgetItem(params_text))
 
-        # 等待時間
         wait = step.params.get('wait', '1') or '1'
         self.steps_table.setItem(row, 3, QTableWidgetItem(f"{wait}s"))
 
@@ -1003,7 +974,6 @@ class TaskEditDialog(QDialog):
             QMessageBox.warning(self, t("msg_warning"), "請先選擇要編輯的步驟")
             return
 
-        # 獲取當前步驟
         step = self._get_step_from_row(row)
         dialog = StepEditDialog(step, self)
         if dialog.exec_():
@@ -1011,30 +981,22 @@ class TaskEditDialog(QDialog):
             self._update_step_row(row, new_step)
 
     def _update_step_row(self, row, step):
-        """更新步驟行"""
-        # 類型
         self.steps_table.item(row, 1).setText(step.get_label())
-        # 參數
         self.steps_table.item(row, 2).setText(self._get_params_summary(step))
-        # 等待
         self.steps_table.item(row, 3).setText(f"{step.params.get('wait', '1')}s")
 
     def _get_step_from_row(self, row) -> TaskStep:
-        """從行獲取步驟對象"""
-        # 通過查找對應的步驟數據
         step_data = self._collect_all_steps()
         if row < len(step_data):
             return step_data[row]
         return TaskStep('goto', {'url': 'https://example.com', 'wait': '2'})
 
     def _collect_all_steps(self) -> list:
-        """收集所有步驟"""
         steps = []
         for i in range(self.steps_table.rowCount()):
             step_type = 'goto'
             params = {'url': '', 'wait': '2'}
 
-            # 嘗試從保存的對話框獲取
             for saved_row, saved_step in self.step_dialogs:
                 if saved_row == i:
                     steps.append(saved_step)
@@ -1047,7 +1009,6 @@ class TaskEditDialog(QDialog):
         row = self.steps_table.currentRow()
         if row >= 0:
             self.steps_table.removeRow(row)
-            # 更新保存的對話框索引
             new_dialogs = []
             for saved_row, saved_step in self.step_dialogs:
                 if saved_row < row:
@@ -1078,7 +1039,6 @@ class TaskEditDialog(QDialog):
             if item2:
                 self.steps_table.setItem(r1, col, item2)
 
-        # 交換對話框引用
         dialog_map = {}
         for saved_row, saved_step in self.step_dialogs:
             dialog_map[saved_row] = saved_step
@@ -1095,7 +1055,6 @@ class TaskEditDialog(QDialog):
             self.steps_table.setItem(i, 0, QTableWidgetItem(str(i + 1)))
 
     def _save(self):
-        # 驗證
         name = self.name_edit.text().strip()
         domain = self.domain_edit.text().strip()
 
@@ -1106,15 +1065,12 @@ class TaskEditDialog(QDialog):
             QMessageBox.warning(self, t("msg_warning"), t("msg_enter_domain"))
             return
 
-        # 保存任務
         self.task.name = name
         self.task.domain = domain
         self.task.description = self.desc_edit.toPlainText().strip()
 
-        # 收集所有步驟
         self.task.steps = []
         for i in range(self.steps_table.rowCount()):
-            # 嘗試從對話框獲取
             step = None
             for saved_row, saved_step in self.step_dialogs:
                 if saved_row == i:
@@ -1140,28 +1096,64 @@ class MainWindow(QMainWindow):
         self.task_manager = TaskManager()
         self.browser_thread = None
         self.current_task = None
+        
+        # 資料庫相關
+        self.db_manager = None
+        self.order_monitor = None
+        self.db_connected = False
+        
         self.init_ui()
         self.refresh_task_list()
+        
+        # 嘗試連接資料庫
+        self._init_database()
+
+    def _init_database(self):
+        """初始化資料庫連接"""
+        try:
+            self.db_manager = DatabaseManager()
+            success, msg = self.db_manager.test_connection()
+            if success:
+                self.db_connected = True
+                self.log(t("db_connected", msg=msg))
+                self._update_db_status()
+            else:
+                self.log(t("db_connect_failed", msg=msg))
+                self.db_connected = False
+        except ImportError:
+            self.log("PyMySQL 未安裝，無法使用資料庫功能")
+        except Exception as e:
+            self.log(t("db_connect_error", error=str(e)))
+            self.db_connected = False
+
+    def _update_db_status(self):
+        """更新資料庫狀態顯示"""
+        if hasattr(self, 'db_status_label') and self.db_manager:
+            if self.db_connected:
+                stats = self.db_manager.get_statistics()
+                total = stats.get('total', 0)
+                pending = stats.get('pending', 0)
+                completed = stats.get('completed', 0)
+                self.db_status_label.setText(
+                    t("db_status_info", total=total, pending=pending, completed=completed)
+                )
+                self.db_status_label.setStyleSheet("color: green;")
+            else:
+                self.db_status_label.setText(t("db_status_disconnected"))
+                self.db_status_label.setStyleSheet("color: red;")
 
     def init_ui(self):
         self.setWindowTitle(t("app_title"))
         self.setMinimumSize(1200, 800)
 
-        # 創建菜單
         self._create_menu()
-
-        # 創建工具欄
         self._create_toolbar()
 
-        # 主佈局
         central = QWidget()
         self.setCentralWidget(central)
         layout = QHBoxLayout(central)
 
-        # 左側：任務列表
         left_panel = self._create_task_panel()
-
-        # 右側：詳情+日誌
         right_panel = self._create_work_panel()
 
         splitter = QSplitter(Qt.Horizontal)
@@ -1173,7 +1165,6 @@ class MainWindow(QMainWindow):
 
         layout.addWidget(splitter)
 
-        # 狀態欄
         self.status_bar = QStatusBar()
         self.setStatusBar(self.status_bar)
         self.status_bar.showMessage(t("ready"))
@@ -1181,6 +1172,11 @@ class MainWindow(QMainWindow):
         self.captcha_label = QLabel("")
         self.captcha_label.setStyleSheet("color: orange; font-weight: bold;")
         self.status_bar.addPermanentWidget(self.captcha_label)
+
+        # 資料庫狀態
+        self.db_status_label = QLabel(t("db_status_disconnected"))
+        self.db_status_label.setStyleSheet("color: gray;")
+        self.status_bar.addPermanentWidget(self.db_status_label)
 
     def _create_menu(self):
         menubar = self.menuBar()
@@ -1214,10 +1210,30 @@ class MainWindow(QMainWindow):
             lang_menu.addAction(action)
             self.lang_actions[lang_code] = action
 
-        # 設置當前語言的選中狀態
         current_lang = get_current_lang()
         if current_lang in self.lang_actions:
             self.lang_actions[current_lang].setChecked(True)
+
+        # 資料庫菜單
+        db_menu = menubar.addMenu(t("menu_database"))
+
+        db_connect_action = QAction(t("menu_db_connect"), self)
+        db_connect_action.triggered.connect(self._connect_database)
+        db_menu.addAction(db_connect_action)
+
+        db_sync_action = QAction(t("menu_db_sync"), self)
+        db_sync_action.triggered.connect(self._sync_orders)
+        db_menu.addAction(db_sync_action)
+
+        db_menu.addSeparator()
+
+        db_start_monitor_action = QAction(t("menu_db_start_monitor"), self)
+        db_start_monitor_action.triggered.connect(self._start_monitor)
+        db_menu.addAction(db_start_monitor_action)
+
+        db_stop_monitor_action = QAction(t("menu_db_stop_monitor"), self)
+        db_stop_monitor_action.triggered.connect(self._stop_monitor)
+        db_menu.addAction(db_stop_monitor_action)
 
         # 幫助菜單
         help_menu = menubar.addMenu(t("menu_help"))
@@ -1229,54 +1245,41 @@ class MainWindow(QMainWindow):
         """更改語言"""
         set_language(lang_code)
 
-        # 更新選中狀態
         for code, action in self.lang_actions.items():
             action.setChecked(code == lang_code)
 
-        # 重新構建整個 UI
         self._rebuild_ui()
 
     def _rebuild_ui(self):
         """重新構建 UI（語言切換後）"""
-        # 重新創建菜單和工具欄
         self.menuBar().clear()
         self._create_menu()
 
-        # 重建工具欄
         for tb in self.findChildren(QToolBar):
             self.removeToolBar(tb)
         self._create_toolbar()
 
-        # 更新窗口標題
         self.setWindowTitle(t("app_title"))
-
-        # 更新任務面板標題
         self.task_panel_title.setText(t("panel_task_list"))
 
-        # 更新按鈕文字
         self.btn_new.setText(t("btn_new"))
         self.btn_edit.setText(t("btn_edit"))
         self.btn_delete.setText(t("btn_delete"))
         self.btn_refresh.setText(t("btn_refresh"))
 
-        # 更新工具欄按鈕
         self.run_btn.setText(t("toolbar_run"))
         self.stop_btn.setText(t("toolbar_stop"))
         self.pause_btn.setText(t("toolbar_pause"))
         self.captcha_btn.setText(t("toolbar_captcha_resolved"))
 
-        # 更新標籤頁
         self.tabs.setTabText(0, t("tab_task_detail"))
         self.tabs.setTabText(1, t("tab_execution_log"))
         self.tabs.setTabText(2, t("tab_browser_config"))
+        self.tabs.setTabText(3, t("tab_database"))
 
-        # 更新詳情標籤
         self.detail_label.setText(t("select_task_hint"))
-
-        # 更新清除日誌按鈕
         self.btn_clear_log.setText(t("btn_clear_log"))
 
-        # 更新配置面板
         self.proxy_group.setTitle(t("config_proxy"))
         self.browser_group.setTitle(t("config_browser"))
         self.browser_type.setItemText(0, t("config_browser_chrome"))
@@ -1284,19 +1287,25 @@ class MainWindow(QMainWindow):
         self.headless_check.setText(t("config_headless"))
         self.humanize_check.setText(t("config_humanize"))
         self.geoip_check.setText(t("config_geoip"))
-
-        # 更新代理下拉框
         self.proxy_type.model().item(0).setText(t("config_proxy_none"))
 
-        # 更新狀態欄
+        # 更新資料庫面板
+        if hasattr(self, 'db_config_group'):
+            self.db_config_group.setTitle(t("db_config_title"))
+            self.btn_db_test.setText(t("db_btn_test"))
+            self.btn_db_connect.setText(t("db_btn_connect"))
+            self.btn_db_sync.setText(t("db_btn_sync"))
+            self.btn_db_start_monitor.setText(t("db_btn_start_monitor"))
+            self.btn_db_stop_monitor.setText(t("db_btn_stop_monitor"))
+
         self.status_bar.showMessage(t("ready"))
+        self._update_db_status()
 
     def _create_toolbar(self):
         toolbar = QToolBar()
         toolbar.setIconSize(QSize(28, 28))
         self.addToolBar(toolbar)
 
-        # 運行按鈕
         self.run_btn = QPushButton(t("toolbar_run"))
         self.run_btn.clicked.connect(self.run_task)
         toolbar.addWidget(self.run_btn)
@@ -1322,17 +1331,14 @@ class MainWindow(QMainWindow):
         panel = QWidget()
         layout = QVBoxLayout(panel)
 
-        # 標題
         self.task_panel_title = QLabel(t("panel_task_list"))
         self.task_panel_title.setStyleSheet("font-size: 16px; font-weight: bold;")
         layout.addWidget(self.task_panel_title)
 
-        # 任務列表
         self.task_list = QListWidget()
         self.task_list.itemDoubleClicked.connect(self.edit_task)
         layout.addWidget(self.task_list)
 
-        # 按鈕
         btn_layout = QHBoxLayout()
 
         self.btn_new = QPushButton(t("btn_new"))
@@ -1349,7 +1355,6 @@ class MainWindow(QMainWindow):
 
         layout.addLayout(btn_layout)
 
-        # 刷新按鈕
         self.btn_refresh = QPushButton(t("btn_refresh"))
         self.btn_refresh.clicked.connect(self.refresh_task_list)
         layout.addWidget(self.btn_refresh)
@@ -1360,7 +1365,6 @@ class MainWindow(QMainWindow):
         panel = QWidget()
         layout = QVBoxLayout(panel)
 
-        # 標籤頁
         self.tabs = QTabWidget()
 
         # 任務詳情頁
@@ -1396,6 +1400,10 @@ class MainWindow(QMainWindow):
         config_tab = self._create_config_tab()
         self.tabs.addTab(config_tab, t("tab_browser_config"))
 
+        # 資料庫頁
+        db_tab = self._create_database_tab()
+        self.tabs.addTab(db_tab, t("tab_database"))
+
         layout.addWidget(self.tabs)
 
         return panel
@@ -1404,7 +1412,6 @@ class MainWindow(QMainWindow):
         tab = QWidget()
         layout = QVBoxLayout(tab)
 
-        # 代理配置
         self.proxy_group = QGroupBox(t("config_proxy"))
         proxy_layout = QVBoxLayout()
 
@@ -1421,11 +1428,9 @@ class MainWindow(QMainWindow):
         self.proxy_group.setLayout(proxy_layout)
         layout.addWidget(self.proxy_group)
 
-        # 瀏覽器配置
         self.browser_group = QGroupBox(t("config_browser"))
         browser_layout = QVBoxLayout()
 
-        # 瀏覽器選擇
         browser_type_layout = QHBoxLayout()
         browser_type_layout.addWidget(QLabel(t("config_browser_label")))
         self.browser_type = QComboBox()
@@ -1451,6 +1456,279 @@ class MainWindow(QMainWindow):
         layout.addStretch()
 
         return tab
+
+    def _create_database_tab(self) -> QWidget:
+        """創建資料庫配置頁面"""
+        tab = QWidget()
+        layout = QVBoxLayout(tab)
+
+        # 配置區
+        self.db_config_group = QGroupBox(t("db_config_title"))
+        db_config_layout = QFormLayout()
+
+        self.db_host = QLineEdit("localhost")
+        db_config_layout.addRow(t("db_host") + ":", self.db_host)
+
+        self.db_port = QSpinBox()
+        self.db_port.setRange(1, 65535)
+        self.db_port.setValue(3306)
+        db_config_layout.addRow(t("db_port") + ":", self.db_port)
+
+        self.db_user = QLineEdit("root")
+        db_config_layout.addRow(t("db_user") + ":", self.db_user)
+
+        self.db_password = QLineEdit("123456")
+        self.db_password.setEchoMode(QLineEdit.Password)
+        db_config_layout.addRow(t("db_password") + ":", self.db_password)
+
+        self.db_database = QLineEdit("trader")
+        db_config_layout.addRow(t("db_database") + ":", self.db_database)
+
+        self.db_config_group.setLayout(db_config_layout)
+        layout.addWidget(self.db_config_group)
+
+        # 操作按鈕
+        btn_layout = QHBoxLayout()
+
+        self.btn_db_test = QPushButton(t("db_btn_test"))
+        self.btn_db_test.clicked.connect(self._test_database)
+        btn_layout.addWidget(self.btn_db_test)
+
+        self.btn_db_connect = QPushButton(t("db_btn_connect"))
+        self.btn_db_connect.clicked.connect(self._connect_database)
+        btn_layout.addWidget(self.btn_db_connect)
+
+        self.btn_db_sync = QPushButton(t("db_btn_sync"))
+        self.btn_db_sync.clicked.connect(self._sync_orders)
+        btn_layout.addWidget(self.btn_db_sync)
+
+        layout.addLayout(btn_layout)
+
+        # 監控控制
+        monitor_group = QGroupBox(t("db_monitor_title"))
+        monitor_layout = QVBoxLayout()
+
+        self.monitor_interval = QSpinBox()
+        self.monitor_interval.setRange(5, 300)
+        self.monitor_interval.setValue(30)
+        self.monitor_interval.setSuffix(" 秒")
+        monitor_layout.addWidget(QLabel(t("db_monitor_interval") + ":"))
+        monitor_layout.addWidget(self.monitor_interval)
+
+        monitor_btn_layout = QHBoxLayout()
+        self.btn_db_start_monitor = QPushButton(t("db_btn_start_monitor"))
+        self.btn_db_start_monitor.clicked.connect(self._start_monitor)
+        monitor_btn_layout.addWidget(self.btn_db_start_monitor)
+
+        self.btn_db_stop_monitor = QPushButton(t("db_btn_stop_monitor"))
+        self.btn_db_stop_monitor.clicked.connect(self._stop_monitor)
+        self.btn_db_stop_monitor.setEnabled(False)
+        monitor_btn_layout.addWidget(self.btn_db_stop_monitor)
+
+        monitor_layout.addLayout(monitor_btn_layout)
+
+        self.monitor_status_label = QLabel(t("db_monitor_stopped"))
+        self.monitor_status_label.setStyleSheet("color: gray;")
+        monitor_layout.addWidget(self.monitor_status_label)
+
+        monitor_group.setLayout(monitor_layout)
+        layout.addWidget(monitor_group)
+
+        # 任務隊列
+        task_queue_group = QGroupBox(t("db_task_queue"))
+        task_queue_layout = QVBoxLayout()
+
+        self.task_queue_table = QTableWidget()
+        self.task_queue_table.setColumnCount(4)
+        self.task_queue_table.setHorizontalHeaderLabels([
+            "ID", t("db_order_no"), t("db_status"), t("db_created_at")
+        ])
+        self.task_queue_table.setMaximumHeight(150)
+        task_queue_layout.addWidget(self.task_queue_table)
+
+        refresh_btn = QPushButton(t("btn_refresh"))
+        refresh_btn.clicked.connect(self._refresh_task_queue)
+        task_queue_layout.addWidget(refresh_btn)
+
+        task_queue_group.setLayout(task_queue_layout)
+        layout.addWidget(task_queue_group)
+
+        layout.addStretch()
+
+        return tab
+
+    def _test_database(self):
+        """測試資料庫連接"""
+        config = self._get_db_config()
+        test_db = DatabaseManager(config)
+        success, msg = test_db.test_connection()
+        
+        if success:
+            QMessageBox.information(self, t("msg_info"), t("db_test_success", msg=msg))
+        else:
+            QMessageBox.warning(self, t("msg_error"), t("db_test_failed", msg=msg))
+
+    def _get_db_config(self) -> dict:
+        """獲取資料庫配置"""
+        return {
+            'host': self.db_host.text().strip() or 'localhost',
+            'port': self.db_port.value(),
+            'user': self.db_user.text().strip() or 'root',
+            'password': self.db_password.text(),
+            'database': self.db_database.text().strip() or 'trader',
+        }
+
+    def _connect_database(self):
+        """連接資料庫"""
+        config = self._get_db_config()
+        self.db_manager = DatabaseManager(config)
+        success, msg = self.db_manager.test_connection()
+        
+        if success:
+            self.db_connected = True
+            self.log(t("db_connected", msg=msg))
+            self._update_db_status()
+            self._refresh_task_queue()
+            QMessageBox.information(self, t("msg_info"), t("db_connect_success"))
+        else:
+            self.db_connected = False
+            self.log(t("db_connect_failed", msg=msg))
+            QMessageBox.warning(self, t("msg_error"), t("db_connect_failed", msg=msg))
+
+    def _sync_orders(self):
+        """同步訂單"""
+        if not self.db_connected or not self.db_manager:
+            QMessageBox.warning(self, t("msg_warning"), t("db_not_connected"))
+            return
+
+        try:
+            count = self.db_manager.sync_direct_orders()
+            self.log(t("db_sync_complete", count=count))
+            self._refresh_task_queue()
+            QMessageBox.information(self, t("msg_info"), t("db_sync_result", count=count))
+        except Exception as e:
+            QMessageBox.warning(self, t("msg_error"), str(e))
+
+    def _refresh_task_queue(self):
+        """刷新任務隊列"""
+        if not self.db_connected or not self.db_manager:
+            return
+
+        try:
+            tasks = self.db_manager.get_pending_tasks(limit=50)
+            self.task_queue_table.setRowCount(len(tasks))
+
+            for i, task in enumerate(tasks):
+                self.task_queue_table.setItem(i, 0, QTableWidgetItem(str(task['id'])))
+                self.task_queue_table.setItem(i, 1, QTableWidgetItem(task['order_no']))
+                self.task_queue_table.setItem(i, 2, QTableWidgetItem(task['status']))
+                self.task_queue_table.setItem(i, 3, QTableWidgetItem(
+                    task['created_at'].strftime('%Y-%m-%d %H:%M:%S') if task.get('created_at') else ''
+                ))
+
+            self._update_db_status()
+        except Exception as e:
+            self.log(f"刷新任務隊列失敗: {e}")
+
+    def _start_monitor(self):
+        """開始監控"""
+        if not self.db_connected or not self.db_manager:
+            QMessageBox.warning(self, t("msg_warning"), t("db_not_connected"))
+            return
+
+        interval = self.monitor_interval.value()
+        
+        if self.order_monitor and self.order_monitor.is_running:
+            self.log(t("db_monitor_already_running"))
+            return
+
+        self.order_monitor = OrderMonitor(self.db_manager, callback=self._on_new_order)
+        self.order_monitor.start(interval=interval)
+        
+        self.btn_db_start_monitor.setEnabled(False)
+        self.btn_db_stop_monitor.setEnabled(True)
+        self.monitor_status_label.setText(t("db_monitor_running", interval=interval))
+        self.monitor_status_label.setStyleSheet("color: green;")
+        
+        self.log(t("db_monitor_started", interval=interval))
+        
+        # 立即執行一次掃描
+        tasks = self.order_monitor.scan_once()
+        if tasks:
+            self.log(t("db_found_tasks", count=len(tasks)))
+
+    def _stop_monitor(self):
+        """停止監控"""
+        if self.order_monitor:
+            self.order_monitor.stop()
+        
+        self.btn_db_start_monitor.setEnabled(True)
+        self.btn_db_stop_monitor.setEnabled(False)
+        self.monitor_status_label.setText(t("db_monitor_stopped"))
+        self.monitor_status_label.setStyleSheet("color: gray;")
+        
+        self.log(t("db_monitor_stopped"))
+
+    def _on_new_order(self, task: dict):
+        """新訂單回調"""
+        order_no = task.get('order_no', '')
+        self.log(t("db_new_order", order_no=order_no))
+        
+        # 自動執行任務
+        self._execute_order_task(order_no)
+
+    def _execute_order_task(self, order_no: str):
+        """執行訂單任務"""
+        if not self.task_manager.tasks:
+            self.log(t("db_no_tasks_configured"))
+            return
+
+        # 選擇第一個任務作為範例
+        task_name = list(self.task_manager.tasks.keys())[0]
+        task = self.task_manager.tasks[task_name]
+        
+        if not task.steps:
+            self.log(t("msg_no_steps"))
+            return
+
+        config = self.get_config()
+
+        self.log("=" * 50)
+        self.log(t("task_start", name=task.name))
+        self.log(t("task_order_no", order_no=order_no))
+
+        # 更新按鈕狀態
+        self.run_btn.setEnabled(False)
+        self.stop_btn.setEnabled(True)
+        self.pause_btn.setEnabled(True)
+
+        # 啟動瀏覽器線程
+        self.browser_thread = BrowserThread(config, task, order_no=order_no)
+        self.browser_thread.log_signal.connect(self.log)
+        self.browser_thread.status_signal.connect(lambda s: self.status_bar.showMessage(s))
+        self.browser_thread.captcha_signal.connect(self.on_captcha_detected)
+        self.browser_thread.captcha_resolved_signal.connect(self.on_captcha_resolved)
+        self.browser_thread.task_complete_signal.connect(self._on_order_task_complete)
+        self.browser_thread.start()
+
+    def _on_order_task_complete(self, success: bool, message: str, order_no: str):
+        """訂單任務完成回調"""
+        if self.db_connected and self.db_manager and order_no:
+            if success:
+                self.db_manager.update_task_status(order_no, 'completed')
+                self.log(t("db_task_completed", order_no=order_no))
+            else:
+                self.db_manager.update_task_status(order_no, 'failed', message)
+                self.log(t("db_task_failed", order_no=order_no, error=message))
+
+        self._refresh_task_queue()
+
+        # 更新按鈕狀態
+        self.run_btn.setEnabled(True)
+        self.stop_btn.setEnabled(False)
+        self.pause_btn.setEnabled(False)
+        self.captcha_btn.setEnabled(False)
+        self.captcha_label.setText("")
 
     def get_config(self) -> dict:
         config = {
@@ -1612,12 +1890,10 @@ class MainWindow(QMainWindow):
         self.log("=" * 50)
         self.log(t("task_start", name=task.name))
 
-        # 更新按鈕狀態
         self.run_btn.setEnabled(False)
         self.stop_btn.setEnabled(True)
         self.pause_btn.setEnabled(True)
 
-        # 啟動瀏覽器線程
         self.browser_thread = BrowserThread(config, task)
         self.browser_thread.log_signal.connect(self.log)
         self.browser_thread.status_signal.connect(lambda s: self.status_bar.showMessage(s))
@@ -1661,7 +1937,7 @@ class MainWindow(QMainWindow):
         self.captcha_label.setText("")
         self.captcha_btn.setEnabled(False)
 
-    def on_task_complete(self, success: bool, message: str):
+    def on_task_complete(self, success: bool, message: str, order_no: str = None):
         self.run_btn.setEnabled(True)
         self.stop_btn.setEnabled(False)
         self.pause_btn.setEnabled(False)
@@ -1685,6 +1961,8 @@ class MainWindow(QMainWindow):
         if self.browser_thread and self.browser_thread.is_running:
             self.browser_thread.stop()
             time.sleep(0.5)
+        if self.order_monitor and self.order_monitor.is_running:
+            self.order_monitor.stop()
         event.accept()
 
 

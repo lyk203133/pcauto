@@ -258,6 +258,67 @@ TRANSLATIONS: Dict[str, Dict[str, str]] = {
         # === 按鈕 ===
         "btn_ok": "確定",
         "btn_cancel": "取消",
+
+        # === 資料庫功能 ===
+        "tab_database": "💾 資料庫",
+        "menu_database": "資料庫",
+        "menu_db_connect": "連接資料庫",
+        "menu_db_sync": "同步訂單",
+        "menu_db_start_monitor": "開始監控",
+        "menu_db_stop_monitor": "停止監控",
+
+        # === 資料庫配置 ===
+        "db_config_title": "📀 資料庫配置",
+        "db_host": "主機",
+        "db_port": "端口",
+        "db_user": "用戶名",
+        "db_password": "密碼",
+        "db_database": "資料庫",
+        "db_btn_test": "🔍 測試連接",
+        "db_btn_connect": "🔗 連接",
+        "db_btn_sync": "🔄 同步訂單",
+        "db_btn_start_monitor": "▶ 開始監控",
+        "db_btn_stop_monitor": "⏹ 停止監控",
+
+        # === 監控配置 ===
+        "db_monitor_title": "📡 訂單監控",
+        "db_monitor_interval": "掃描間隔",
+        "db_monitor_running": "監控中 (間隔 {interval} 秒)",
+        "db_monitor_stopped": "已停止",
+        "db_monitor_already_running": "監控已在運行",
+
+        # === 任務隊列 ===
+        "db_task_queue": "📋 任務隊列",
+        "db_order_no": "訂單號",
+        "db_status": "狀態",
+        "db_created_at": "創建時間",
+
+        # === 資料庫狀態 ===
+        "db_status_info": "總計: {total} | 待處理: {pending} | 已完成: {completed}",
+        "db_status_disconnected": "未連接資料庫",
+        "db_status_connected": "已連接",
+
+        # === 資料庫操作 ===
+        "db_connected": "✅ 資料庫連接成功: {msg}",
+        "db_connect_failed": "❌ 資料庫連接失敗: {msg}",
+        "db_connect_error": "❌ 資料庫錯誤: {error}",
+        "db_connect_success": "資料庫連接成功",
+        "db_not_connected": "請先連接資料庫",
+        "db_test_success": "✅ 連接測試成功: {msg}",
+        "db_test_failed": "❌ 連接測試失敗: {msg}",
+
+        # === 訂單同步 ===
+        "db_sync_complete": "✅ 同步完成，新增 {count} 個任務",
+        "db_sync_result": "已同步 {count} 個新訂單",
+        "db_found_tasks": "發現 {count} 個待處理任務",
+        "db_new_order": "📦 新訂單: {order_no}",
+        "db_no_tasks_configured": "沒有配置任務",
+
+        # === 任務執行 ===
+        "task_order_no": "📦 訂單號: {order_no}",
+        "db_task_completed": "✅ 任務完成: {order_no}",
+        "db_task_failed": "❌ 任務失敗: {order_no} - {error}",
+        "db_monitor_started": "📡 監控已啟動 (間隔 {interval} 秒)",
     },
 
     "en": {
@@ -507,6 +568,67 @@ TRANSLATIONS: Dict[str, Dict[str, str]] = {
         # === Buttons ===
         "btn_ok": "OK",
         "btn_cancel": "Cancel",
+
+        # === Database Features ===
+        "tab_database": "💾 Database",
+        "menu_database": "Database",
+        "menu_db_connect": "Connect Database",
+        "menu_db_sync": "Sync Orders",
+        "menu_db_start_monitor": "Start Monitor",
+        "menu_db_stop_monitor": "Stop Monitor",
+
+        # === Database Config ===
+        "db_config_title": "📀 Database Configuration",
+        "db_host": "Host",
+        "db_port": "Port",
+        "db_user": "Username",
+        "db_password": "Password",
+        "db_database": "Database",
+        "db_btn_test": "🔍 Test Connection",
+        "db_btn_connect": "🔗 Connect",
+        "db_btn_sync": "🔄 Sync Orders",
+        "db_btn_start_monitor": "▶ Start Monitor",
+        "db_btn_stop_monitor": "⏹ Stop Monitor",
+
+        # === Monitor Config ===
+        "db_monitor_title": "📡 Order Monitor",
+        "db_monitor_interval": "Scan Interval",
+        "db_monitor_running": "Monitoring (interval {interval}s)",
+        "db_monitor_stopped": "Stopped",
+        "db_monitor_already_running": "Monitor already running",
+
+        # === Task Queue ===
+        "db_task_queue": "📋 Task Queue",
+        "db_order_no": "Order No",
+        "db_status": "Status",
+        "db_created_at": "Created At",
+
+        # === Database Status ===
+        "db_status_info": "Total: {total} | Pending: {pending} | Completed: {completed}",
+        "db_status_disconnected": "Database Disconnected",
+        "db_status_connected": "Connected",
+
+        # === Database Operations ===
+        "db_connected": "✅ Database connected: {msg}",
+        "db_connect_failed": "❌ Database connection failed: {msg}",
+        "db_connect_error": "❌ Database error: {error}",
+        "db_connect_success": "Database connected successfully",
+        "db_not_connected": "Please connect to database first",
+        "db_test_success": "✅ Connection test passed: {msg}",
+        "db_test_failed": "❌ Connection test failed: {msg}",
+
+        # === Order Sync ===
+        "db_sync_complete": "✅ Sync complete, added {count} tasks",
+        "db_sync_result": "Synced {count} new orders",
+        "db_found_tasks": "Found {count} pending tasks",
+        "db_new_order": "📦 New order: {order_no}",
+        "db_no_tasks_configured": "No tasks configured",
+
+        # === Task Execution ===
+        "task_order_no": "📦 Order No: {order_no}",
+        "db_task_completed": "✅ Task completed: {order_no}",
+        "db_task_failed": "❌ Task failed: {order_no} - {error}",
+        "db_monitor_started": "📡 Monitor started (interval {interval}s)",
     },
 
     "vi": {
@@ -756,6 +878,67 @@ TRANSLATIONS: Dict[str, Dict[str, str]] = {
         # === Buttons ===
         "btn_ok": "Đồng ý",
         "btn_cancel": "Hủy",
+
+        # === Tính năng cơ sở dữ liệu ===
+        "tab_database": "💾 Cơ Sở Dữ Liệu",
+        "menu_database": "Cơ Sở Dữ Liệu",
+        "menu_db_connect": "Kết nối CSDL",
+        "menu_db_sync": "Đồng bộ đơn hàng",
+        "menu_db_start_monitor": "Bắt đầu giám sát",
+        "menu_db_stop_monitor": "Dừng giám sát",
+
+        # === Cấu hình CSDL ===
+        "db_config_title": "📀 Cấu Hình Cơ Sở Dữ Liệu",
+        "db_host": "Máy chủ",
+        "db_port": "Cổng",
+        "db_user": "Tên người dùng",
+        "db_password": "Mật khẩu",
+        "db_database": "Cơ sở dữ liệu",
+        "db_btn_test": "🔍 Kiểm tra kết nối",
+        "db_btn_connect": "🔗 Kết nối",
+        "db_btn_sync": "🔄 Đồng bộ đơn hàng",
+        "db_btn_start_monitor": "▶ Bắt đầu giám sát",
+        "db_btn_stop_monitor": "⏹ Dừng giám sát",
+
+        # === Cấu hình giám sát ===
+        "db_monitor_title": "📡 Giám sát đơn hàng",
+        "db_monitor_interval": "Khoảng quét",
+        "db_monitor_running": "Đang giám sát (khoảng {interval} giây)",
+        "db_monitor_stopped": "Đã dừng",
+        "db_monitor_already_running": "Giám sát đang chạy",
+
+        # === Hàng đợi tác vụ ===
+        "db_task_queue": "📋 Hàng Đợi Tác Vụ",
+        "db_order_no": "Số đơn hàng",
+        "db_status": "Trạng thái",
+        "db_created_at": "Thời gian tạo",
+
+        # === Trạng thái CSDL ===
+        "db_status_info": "Tổng: {total} | Chờ: {pending} | Hoàn thành: {completed}",
+        "db_status_disconnected": "Chưa kết nối CSDL",
+        "db_status_connected": "Đã kết nối",
+
+        # === Thao tác CSDL ===
+        "db_connected": "✅ Kết nối CSDL thành công: {msg}",
+        "db_connect_failed": "❌ Kết nối CSDL thất bại: {msg}",
+        "db_connect_error": "❌ Lỗi CSDL: {error}",
+        "db_connect_success": "Kết nối CSDL thành công",
+        "db_not_connected": "Vui lòng kết nối CSDL trước",
+        "db_test_success": "✅ Kiểm tra kết nối thành công: {msg}",
+        "db_test_failed": "❌ Kiểm tra kết nối thất bại: {msg}",
+
+        # === Đồng bộ đơn hàng ===
+        "db_sync_complete": "✅ Đồng bộ xong, thêm {count} tác vụ",
+        "db_sync_result": "Đã đồng bộ {count} đơn hàng mới",
+        "db_found_tasks": "Tìm thấy {count} tác vụ đang chờ",
+        "db_new_order": "📦 Đơn hàng mới: {order_no}",
+        "db_no_tasks_configured": "Chưa có tác vụ được cấu hình",
+
+        # === Thực thi tác vụ ===
+        "task_order_no": "📦 Số đơn hàng: {order_no}",
+        "db_task_completed": "✅ Tác vụ hoàn thành: {order_no}",
+        "db_task_failed": "❌ Tác vụ thất bại: {order_no} - {error}",
+        "db_monitor_started": "📡 Bắt đầu giám sát (khoảng {interval} giây)",
     }
 }
 
