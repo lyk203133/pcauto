@@ -97,7 +97,7 @@ class TaskPollerThread(QThread):
                 return
 
         browser_cfg = {
-            'browser_type': cfg.get('browser_type', 'cloakbrowser'),
+            'browser_type': cfg.get('browser_type', 'chrome'),
             'humanize':     cfg.get('humanize', True),
             'proxy':        cfg.get('proxy') or None,
         }

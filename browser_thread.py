@@ -72,42 +72,83 @@ class BrowserThread(QThread):
 
     def _init_browser(self):
         self.log_signal.emit('🌐 正在啟動瀏覽器...')
-        browser_type = self.config.get('browser_type', 'cloakbrowser')
+        # 預設使用系統 Chrome（無需下載任何組件）
+        browser_type = self.config.get('browser_type', 'chrome')
         if browser_type == 'chrome':
             self._init_chrome()
         else:
             self._init_cloakbrowser()
 
+    @staticmethod
+    def _find_system_chrome() -> str | None:
+        """搜尋本機已安裝的 Chrome / Chromium 執行檔路徑"""
+        import sys as _sys
+
+        if os.name == 'nt':                          # Windows
+            candidates = []
+            for base in [
+                os.environ.get('ProgramFiles',      'C:\\Program Files'),
+                os.environ.get('ProgramFiles(x86)', 'C:\\Program Files (x86)'),
+                os.environ.get('LOCALAPPDATA',      ''),
+            ]:
+                candidates += [
+                    os.path.join(base, 'Google', 'Chrome', 'Application', 'chrome.exe'),
+                    os.path.join(base, 'Chromium', 'Application', 'chrome.exe'),
+                ]
+
+        elif _sys.platform == 'darwin':              # macOS
+            candidates = [
+                '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome',
+                '/Applications/Chromium.app/Contents/MacOS/Chromium',
+                os.path.expanduser(
+                    '~/Applications/Google Chrome.app/Contents/MacOS/Google Chrome'
+                ),
+            ]
+
+        else:                                        # Linux
+            candidates = [
+                '/usr/bin/google-chrome',
+                '/usr/bin/google-chrome-stable',
+                '/usr/bin/chromium-browser',
+                '/usr/bin/chromium',
+                '/snap/bin/chromium',
+            ]
+
+        return next((p for p in candidates if os.path.exists(p)), None)
+
     def _init_chrome(self):
         from playwright.sync_api import sync_playwright
 
-        self.log_signal.emit('使用系統 Chrome')
-        chrome_paths = []
-        if os.name == 'nt':
-            for base in [
-                os.environ.get('ProgramFiles', 'C:\\Program Files'),
-                os.environ.get('ProgramFiles(x86)', 'C:\\Program Files (x86)'),
-                os.environ.get('LOCALAPPDATA', ''),
-            ]:
-                chrome_paths.append(
-                    os.path.join(base, 'Google', 'Chrome', 'Application', 'chrome.exe')
-                )
+        # 禁止 Playwright 自動下載瀏覽器，強制使用本機 Chrome
+        os.environ.setdefault('PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD', '1')
 
-        executable_path = next((p for p in chrome_paths if os.path.exists(p)), None)
+        executable_path = self._find_system_chrome()
         if executable_path:
-            self.log_signal.emit(f'Chrome 路徑: {executable_path}')
+            self.log_signal.emit(f'✅ 使用系統 Chrome：{executable_path}')
+        else:
+            self.log_signal.emit('⚠️ 未找到系統 Chrome，嘗試使用 Playwright 內建瀏覽器')
 
         for attempt in range(3):
             try:
                 pw = sync_playwright().start()
+                headless = self.config.get('headless', False)
                 opts = {
-                    'headless': False,
-                    'args': ['--start-maximized', '--disable-blink-features=AutomationControlled'],
+                    'headless': headless,
+                    'args': [
+                        '--disable-blink-features=AutomationControlled',
+                        '--no-first-run',
+                        '--no-default-browser-check',
+                    ] + (['--start-maximized'] if not headless else [
+                        '--no-sandbox',
+                        '--disable-dev-shm-usage',
+                        '--disable-gpu',
+                    ]),
                 }
                 if executable_path:
                     opts['executable_path'] = executable_path
                 if self.config.get('proxy'):
                     opts['proxy'] = {'server': self.config['proxy']}
+
                 self.browser = pw.chromium.launch(**opts)
                 self.page    = self.browser.new_page()
                 self.page.add_init_script(

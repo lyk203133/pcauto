@@ -17,10 +17,11 @@ def _app_dir() -> Path:
 CONFIG_FILE = _app_dir() / 'config.json'
 
 DEFAULT_CONFIG = {
-    'server_url':    'http://localhost:8000',
-    'api_key':       '',
-    'hmac_secret':   '',
-    'poll_interval': 10,
+    'server_url':    'http://localhost:8088',
+    'api_key':       'b3e377b9cff032a348861bf7b3e57fdddddad1d65a20771ca3d0d99127a56c59',
+    'hmac_secret':   'b3e377b9cff032a348861bf7b3e57fdddddad1d65a20771ca3d0d99127a56c59',
+    'poll_interval': 5,
+    'browser_type':  'chrome',    # 預設使用系統 Chrome，無需下載組件
 }
 
 
