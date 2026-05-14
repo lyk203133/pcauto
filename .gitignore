@@ -44,6 +44,6 @@ logs/
 # Screenshots
 screenshots/
 
-# Config files (keep example)
-# config.json
-# tasks.json
+# Config files（真實密鑰不提交，只提交 example）
+config.json
+tasks.json

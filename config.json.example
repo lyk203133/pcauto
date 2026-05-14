@@ -1,0 +1,6 @@
+{
+  "server_url": "https://your-server.com",
+  "api_key": "your-pcauto-api-key-here",
+  "hmac_secret": "your-hmac-secret-here",
+  "poll_interval": 5
+}

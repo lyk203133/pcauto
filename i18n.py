@@ -46,6 +46,12 @@ TRANSLATIONS: Dict[str, Dict[str, str]] = {
         "btn_logs": "日誌",
         "btn_settings": "設定",
         "btn_database": "資料庫",
+        "label_language": "語言",
+        "label_log": "實時日誌",
+        "log_placeholder": "等待任務執行，此處將顯示實時日誌...",
+        "info_placeholder": "任務信息將在此顯示",
+        "log_clear": "清空日誌",
+        "db_not_configured": "資料庫尚未配置",
 
         # === 工作面板 ===
         "tab_task_detail": "📄 任務詳情",
@@ -93,6 +99,7 @@ TRANSLATIONS: Dict[str, Dict[str, str]] = {
 
         # === 瀏覽器配置 ===
         "config_browser": "🌐 瀏覽器配置",
+        "config_browser_options": "瀏覽器選項",
         "config_browser_label": "瀏覽器:",
         "config_browser_chrome": "🌐 系統 Chrome",
         "config_browser_cloak": "🕵️ CloakBrowser (防檢測)",
@@ -364,6 +371,12 @@ TRANSLATIONS: Dict[str, Dict[str, str]] = {
         "btn_logs": "Logs",
         "btn_settings": "Settings",
         "btn_database": "Database",
+        "label_language": "Language",
+        "label_log": "Real-time Log",
+        "log_placeholder": "Waiting for task execution, logs will appear here...",
+        "info_placeholder": "Task information will be displayed here",
+        "log_clear": "Clear Log",
+        "db_not_configured": "Database not configured",
 
         # === Work Panel ===
         "tab_task_detail": "📄 Task Details",
@@ -411,6 +424,7 @@ TRANSLATIONS: Dict[str, Dict[str, str]] = {
 
         # === Browser Config ===
         "config_browser": "🌐 Browser Config",
+        "config_browser_options": "Browser Options",
         "config_browser_label": "Browser:",
         "config_browser_chrome": "🌐 System Chrome",
         "config_browser_cloak": "🕵️ CloakBrowser (Anti-detect)",
@@ -682,6 +696,12 @@ TRANSLATIONS: Dict[str, Dict[str, str]] = {
         "btn_logs": "Nhật ký",
         "btn_settings": "Cài đặt",
         "btn_database": "Cơ sở dữ liệu",
+        "label_language": "Ngôn ngữ",
+        "label_log": "Nhật ký thời gian thực",
+        "log_placeholder": "Đang chờ chạy tác vụ, nhật ký sẽ hiển thị ở đây...",
+        "info_placeholder": "Thông tin tác vụ sẽ được hiển thị ở đây",
+        "log_clear": "Xóa nhật ký",
+        "db_not_configured": "Cơ sở dữ liệu chưa cấu hình",
 
         # === Bảng làm việc ===
         "tab_task_detail": "📄 Chi Tiết Tác Vụ",
@@ -730,6 +750,7 @@ TRANSLATIONS: Dict[str, Dict[str, str]] = {
         # === Cấu hình trình duyệt ===
         "config_browser": "🌐 Cấu Hình Trình Duyệt",
         "config_browser_label": "Trình duyệt:",
+        "config_browser_options": "Tùy chọn trình duyệt",
         "config_browser_chrome": "🌐 Chrome Hệ Thống",
         "config_browser_cloak": "🕵️ CloakBrowser (Chống phát hiện)",
         "config_headless": "Chế độ ẩn (Ẩn trình duyệt)",

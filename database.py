@@ -1,6 +1,10 @@
 """
 database.py - MySQL 資料庫模組
-用於偵測 trader 資料庫中的 orders 訂單並執行任務
+用於 db_dialog.py 的資料庫配置功能（連接測試、統計查詢等）
+
+注意：OrderMonitor 類已被移除，訂單監控功能已由 task_poller.py（TaskPollerThread）替代。
+      pcauto 現在通過 HTTP API 輪詢 trader-system 後端獲取待處理任務，
+      不再直接連接本地 MySQL 資料庫。
 """
 
 import time
@@ -229,58 +233,3 @@ class DatabaseManager:
         except Exception as e:
             return False, f"錯誤: {str(e)}"
 
-
-class OrderMonitor:
-    """訂單監控器 - 定時掃描新訂單"""
-
-    def __init__(self, db_manager: DatabaseManager, callback=None):
-        self.db = db_manager
-        self.callback = callback  # 回調函數：當有新任務時調用
-        self.is_running = False
-        self.scan_interval = 30  # 默認30秒
-
-    def start(self, interval: int = 30):
-        """開始監控"""
-        self.is_running = True
-        self.scan_interval = interval
-        logger.info(f"訂單監控已啟動，間隔: {interval}秒")
-
-    def stop(self):
-        """停止監控"""
-        self.is_running = False
-        logger.info("訂單監控已停止")
-
-    def scan_once(self) -> List[Dict]:
-        """執行一次掃描"""
-        if not self.db.connection or not self.db.connection.open:
-            if not self.db.connect():
-                return []
-
-        # 同步新訂單
-        new_count = self.db.sync_direct_orders()
-        if new_count > 0:
-            logger.info(f"發現 {new_count} 個新訂單")
-
-        # 獲取待處理任務
-        tasks = self.db.get_pending_tasks(limit=10)
-        
-        # 觸發回調
-        if tasks and self.callback:
-            for task in tasks:
-                self.callback(task)
-
-        return tasks
-
-    def run_loop(self):
-        """運行監控循環"""
-        while self.is_running:
-            try:
-                self.scan_once()
-            except Exception as e:
-                logger.error(f"監控循環出錯: {e}")
-            
-            # 等待下一次掃描
-            for _ in range(self.scan_interval):
-                if not self.is_running:
-                    break
-                time.sleep(1)

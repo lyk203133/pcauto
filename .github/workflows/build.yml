@@ -1,0 +1,95 @@
+name: Build pcauto
+
+on:
+  push:
+    tags:
+      - 'v*'          # 推 tag（如 v1.0.1）時自動觸發
+  workflow_dispatch:  # 也支援手動在 GitHub 頁面點觸發
+
+jobs:
+  # ── macOS 打包 ───────────────────────────────────────────
+  build-mac:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt pyinstaller
+
+      - name: Build macOS app
+        run: pyinstaller pcauto.spec --clean --noconfirm
+
+      - name: Copy config template
+        run: cp config.json.example dist/config.json
+
+      - name: Zip app bundle
+        run: |
+          cd dist
+          zip -r pcauto-mac.zip pcauto.app config.json
+
+      - name: Upload macOS artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: pcauto-mac
+          path: dist/pcauto-mac.zip
+          retention-days: 30
+
+  # ── Windows 打包 ─────────────────────────────────────────
+  build-windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt pyinstaller
+
+      - name: Build Windows exe
+        run: pyinstaller pcauto.spec --clean --noconfirm
+
+      - name: Copy config template
+        run: |
+          if (!(Test-Path "dist\pcauto")) { New-Item -ItemType Directory "dist\pcauto" }
+          Copy-Item config.json dist\pcauto\config.json -ErrorAction SilentlyContinue
+        shell: pwsh
+
+      - name: Zip exe folder
+        run: |
+          cd dist
+          Compress-Archive -Path pcauto -DestinationPath pcauto-windows.zip
+        shell: pwsh
+
+      - name: Upload Windows artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: pcauto-windows
+          path: dist/pcauto-windows.zip
+          retention-days: 30
+
+  # ── 發布 Release（推 tag 時才執行）─────────────────────
+  release:
+    needs: [build-mac, build-windows]
+    runs-on: ubuntu-latest
+    if: startsWith(github.ref, 'refs/tags/')
+    permissions:
+      contents: write
+    steps:
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            pcauto-mac/pcauto-mac.zip
+            pcauto-windows/pcauto-windows.zip
+          generate_release_notes: true
