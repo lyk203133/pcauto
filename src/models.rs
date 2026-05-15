@@ -20,6 +20,7 @@ pub struct StepAction {
     pub code: Option<String>,
     pub name: Option<String>,
     pub variable: Option<String>,
+    pub captcha_type: Option<String>, // captcha_prefetch 用：image | ga
     #[serde(default, deserialize_with = "de_opt_u64")]
     pub timeout: Option<u64>,
     #[serde(default, deserialize_with = "de_opt_u64")]
@@ -141,6 +142,15 @@ pub struct PendingTasksResponse {
 pub struct GetGaResponse {
     pub ready: bool,
     pub ga_code: Option<String>,
+    pub code: Option<String>,
+}
+
+/// GET /api/pcauto/get-credentials 的響應（captcha_prefetch 用）
+#[derive(Debug, Deserialize)]
+pub struct GetCredentialsResponse {
+    pub ready: bool,
+    pub account: Option<String>,
+    pub password: Option<String>,
     pub code: Option<String>,
 }
 

@@ -3,7 +3,7 @@ use hmac::{Hmac, Mac};
 use sha2::Sha256;
 use std::time::{SystemTime, UNIX_EPOCH};
 
-use crate::models::AppConfig;
+use crate::models::{AppConfig, GetCredentialsResponse};
 
 type HmacSha256 = Hmac<Sha256>;
 
@@ -156,6 +156,38 @@ pub async fn request_ga(
     }
 }
 
+/// 回報圖片驗證碼驗證結果給後端（success=true 通過，false 失敗讓會員重輸）
+pub async fn notify_captcha_result(
+    client: &reqwest::Client,
+    cfg: &AppConfig,
+    task_id: u64,
+    order_no: &str,
+    success: bool,
+    reason: &str,
+) {
+    let server_url = cfg.server_url.trim_end_matches('/');
+    if server_url.is_empty() || cfg.api_key.is_empty() {
+        return;
+    }
+    let url = format!("{server_url}/api/pcauto/captcha-result");
+    let payload = serde_json::json!({
+        "task_id": task_id,
+        "order_no": order_no,
+        "success": success,
+        "reason": reason,
+    });
+    let result = client
+        .post(&url)
+        .header("X-Pcauto-Key", &cfg.api_key)
+        .json(&payload)
+        .timeout(std::time::Duration::from_secs(5))
+        .send()
+        .await;
+    if let Err(e) = result {
+        tracing::debug!("captcha-result 回送失敗（非致命）: {e}");
+    }
+}
+
 /// 回傳圖形驗證碼圖片，通知後端讓會員端輸入
 pub async fn request_captcha(
     client: &reqwest::Client,
@@ -238,4 +270,50 @@ pub async fn poll_ga(
         tokio::time::sleep(std::time::Duration::from_secs(1)).await;
     }
     String::new()
+}
+
+/// 輪詢 captcha_prefetch 所需的帳密+驗證碼（三者齊備才返回）
+pub async fn poll_credentials(
+    client: &reqwest::Client,
+    cfg: &AppConfig,
+    task_id: u64,
+    timeout_sec: u64,
+    should_stop: &std::sync::atomic::AtomicBool,
+) -> Option<(String, String, String)> {
+    use std::sync::atomic::Ordering;
+
+    let server_url = cfg.server_url.trim_end_matches('/');
+    if server_url.is_empty() || cfg.api_key.is_empty() {
+        return None;
+    }
+    let url = format!("{server_url}/api/pcauto/get-credentials");
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(timeout_sec);
+
+    while std::time::Instant::now() < deadline {
+        if should_stop.load(Ordering::Relaxed) {
+            return None;
+        }
+        let result = client
+            .get(&url)
+            .header("X-Pcauto-Key", &cfg.api_key)
+            .query(&[("task_id", task_id.to_string())])
+            .timeout(std::time::Duration::from_secs(5))
+            .send()
+            .await;
+
+        if let Ok(resp) = result {
+            if let Ok(data) = resp.json::<GetCredentialsResponse>().await {
+                if data.ready {
+                    let account  = data.account.unwrap_or_default();
+                    let password = data.password.unwrap_or_default();
+                    let code     = data.code.unwrap_or_default();
+                    if !account.is_empty() && !password.is_empty() && !code.is_empty() {
+                        return Some((account, password, code));
+                    }
+                }
+            }
+        }
+        tokio::time::sleep(std::time::Duration::from_secs(1)).await;
+    }
+    None
 }

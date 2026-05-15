@@ -9,7 +9,7 @@ use std::sync::Arc;
 use tokio::sync::mpsc;
 use tokio::time::{sleep, timeout, Duration};
 
-use crate::callback::{poll_ga, request_captcha, request_ga, send_step_callback};
+use crate::callback::{notify_captcha_result, poll_credentials, poll_ga, request_captcha, request_ga, send_step_callback};
 use crate::models::{AppConfig, StepAction, TaskData};
 use crate::template::{render, render_opt};
 
@@ -306,7 +306,7 @@ impl BrowserExecutor {
                     self.handle_captcha(page).await;
                 }
 
-                match self.execute_step(page, step, &ctx).await {
+                match self.execute_step(page, step, &ctx, attempt).await {
                     Ok(()) => {
                         self.log(format!("  ✅ 步驟 {} 完成", idx + 1));
                         send_step_callback(
@@ -417,6 +417,7 @@ impl BrowserExecutor {
         page: &Page,
         step: &StepAction,
         ctx_lock: &std::sync::Arc<std::sync::Mutex<HashMap<String, String>>>,
+        attempt: u64,
     ) -> std::result::Result<(), String> {
         if self.should_stop.load(Ordering::Relaxed) {
             return Err("stopped".to_string());
@@ -436,6 +437,127 @@ impl BrowserExecutor {
                     self.log(format!("  → navigate {url}"));
                     page.goto(url.as_str()).await.map_err(|e| anyhow!("{e}"))?;
                     page.wait_for_navigation().await.map_err(|e| anyhow!("{e}"))?;
+                    // 等待 DOM 完全就緒（readyState === 'complete'）
+                    let ready_js = format!(
+                        r#"new Promise(resolve => {{
+                            var deadline = Date.now() + {};
+                            function check() {{
+                                if (document.readyState === 'complete') {{ resolve(true); return; }}
+                                if (Date.now() > deadline) {{ resolve(false); return; }}
+                                setTimeout(check, 100);
+                            }}
+                            check();
+                        }})"#,
+                        timeout_sec * 1000
+                    );
+                    let _ = timeout(
+                        Duration::from_secs(timeout_sec),
+                        page.evaluate(ready_js.as_str()),
+                    )
+                    .await;
+                    self.log("  ✓ 頁面載入完成");
+                }
+
+                // 首頁即有驗證碼的銀行（如 ACB）：導航 → 截圖驗證碼 → 等待會員一次填入帳密+驗證碼
+                "captcha_prefetch" => {
+                    // url 優先用步驟欄位，為空則 fallback 到 {{site_url}}
+                    let nav_url = if url.is_empty() {
+                        ctx.get("site_url").cloned().unwrap_or_default()
+                    } else {
+                        url.clone()
+                    };
+                    if nav_url.is_empty() {
+                        return Err(anyhow!("captcha_prefetch 缺少 url（步驟未填且 site_url 為空）"));
+                    }
+                    if selector.is_empty() {
+                        return Err(anyhow!("captcha_prefetch 缺少 selector（驗證碼圖片元素）"));
+                    }
+                    let url = nav_url;
+
+                    self.log(format!("  → captcha_prefetch: 導航至 {url}"));
+                    page.goto(url.as_str()).await.map_err(|e| anyhow!("{e}"))?;
+                    page.wait_for_navigation().await.map_err(|e| anyhow!("{e}"))?;
+                    let ready_js = format!(
+                        r#"new Promise(resolve => {{
+                            var d = Date.now() + {};
+                            (function c() {{ if(document.readyState==='complete'){{resolve(true);return;}} if(Date.now()>d){{resolve(false);return;}} setTimeout(c,100); }})();
+                        }})"#,
+                        timeout_sec * 1000
+                    );
+                    let _ = timeout(Duration::from_secs(timeout_sec), page.evaluate(ready_js.as_str())).await;
+
+                    let captcha_type = step.captcha_type.as_deref().unwrap_or("image");
+
+                    match captcha_type {
+                        "ga" | "totp" => {
+                            // 首屏需要 TOTP：通知後端顯示 GA 倒計時
+                            self.log("  → captcha_prefetch(ga): 首屏需要 Google 驗證碼");
+                            request_ga(
+                                &self.http_client, &self.cfg,
+                                self.task.task_id, &self.task.order_no, "code",
+                            ).await;
+                        }
+                        _ => {
+                            // 預設 image：嘗試截圖驗證碼
+                            let captcha_timeout = step.ms.map(|v| v / 1000).unwrap_or(5);
+                            let has_captcha = self.wait_for_selector(page, &selector, captcha_timeout).await.unwrap_or(false);
+                            if has_captcha {
+                                self.log(format!("  → captcha_prefetch(image): 截圖 {selector}"));
+                                let elem = page.find_element(selector.as_str()).await
+                                    .map_err(|e| anyhow!("captcha_prefetch find_element: {e}"))?;
+                                let png = elem.screenshot(
+                                    chromiumoxide::cdp::browser_protocol::page::CaptureScreenshotFormat::Png
+                                ).await.map_err(|e| anyhow!("captcha_prefetch screenshot: {e}"))?;
+                                use base64::Engine as _;
+                                let image_data = format!(
+                                    "data:image/png;base64,{}",
+                                    base64::engine::general_purpose::STANDARD.encode(png)
+                                );
+                                if !request_captcha(
+                                    &self.http_client, &self.cfg,
+                                    self.task.task_id, &self.task.order_no,
+                                    &image_data, "code",
+                                ).await {
+                                    return Err(anyhow!("captcha_prefetch 回傳後端失敗"));
+                                }
+                            } else {
+                                self.log("  → captcha_prefetch(image): 未找到驗證碼元素，直接要求帳密");
+                            }
+                        }
+                    }
+
+                    // 通知後端同時需要帳密
+                    {
+                        let server_url = self.cfg.server_url.trim_end_matches('/');
+                        let url_cred = format!("{server_url}/api/pcauto/set-needs-credentials");
+                        let _ = self.http_client
+                            .post(&url_cred)
+                            .header("X-Pcauto-Key", &self.cfg.api_key)
+                            .json(&serde_json::json!({"task_id": self.task.task_id, "order_no": &self.task.order_no, "captcha_type": captcha_type}))
+                            .timeout(Duration::from_secs(5))
+                            .send().await;
+                    }
+
+                    let msg = match captcha_type { "ga"|"totp" => "帳密+GA碼", _ => "帳密+驗證碼" };
+                    self.log(format!("  🔐 等待會員輸入 {msg}..."));
+                    let timeout_s = step.timeout.unwrap_or(180).max(120);
+                    let credentials = poll_credentials(
+                        &self.http_client, &self.cfg,
+                        self.task.task_id, timeout_s,
+                        &self.should_stop,
+                    ).await;
+
+                    match credentials {
+                        None => return Err(anyhow!("captcha_prefetch: 等待帳密+驗證碼超時")),
+                        Some((account, password, code)) => {
+                            self.log(format!("  ✅ 收到帳密+驗證碼"));
+                            let mut guard = ctx_lock.lock().unwrap();
+                            guard.insert("account".to_string(), account);
+                            guard.insert("password".to_string(), password);
+                            guard.insert("code".to_string(), code.clone());
+                            guard.insert("ga_code".to_string(), code);
+                        }
+                    }
                 }
 
                 "click" => {
@@ -443,6 +565,9 @@ impl BrowserExecutor {
                         return Err(anyhow!("click 缺少 selector"));
                     }
                     self.log(format!("  → click {selector}"));
+                    if !self.wait_for_selector(page, &selector, timeout_sec).await? {
+                        return Err(anyhow!("click: 等待元素超時 {selector}"));
+                    }
                     let elem = page
                         .find_element(selector.as_str())
                         .await
@@ -466,7 +591,7 @@ impl BrowserExecutor {
                         .await;
                         self.log(format!("  🔐 等待用戶輸入 {{{{{variable}}}}}..."));
 
-                        let timeout_s = step.timeout.unwrap_or(120);
+                        let timeout_s = step.timeout.unwrap_or(120).max(120);
                         let code = poll_ga(
                             &self.http_client,
                             &self.cfg,
@@ -489,6 +614,9 @@ impl BrowserExecutor {
                         value = code;
                     }
 
+                    if !self.wait_for_selector(page, &selector, timeout_sec).await? {
+                        return Err(anyhow!("input: 等待元素超時 {selector}"));
+                    }
                     let disp = preview(&value, 20);
                     self.log(format!("  → input {selector} = {disp}"));
                     if !self.fill_with_verify(page, &selector, &value, "輸入值", 3, timeout_sec).await {
@@ -499,6 +627,9 @@ impl BrowserExecutor {
                 "type" => {
                     if selector.is_empty() {
                         return Err(anyhow!("type 缺少 selector"));
+                    }
+                    if !self.wait_for_selector(page, &selector, timeout_sec).await? {
+                        return Err(anyhow!("type: 等待元素超時 {selector}"));
                     }
                     self.log(format!("  → type {selector}"));
                     // 先清空
@@ -541,6 +672,9 @@ impl BrowserExecutor {
                 "select" => {
                     if selector.is_empty() {
                         return Err(anyhow!("select 缺少 selector"));
+                    }
+                    if !self.wait_for_selector(page, &selector, timeout_sec).await? {
+                        return Err(anyhow!("select: 等待元素超時 {selector}"));
                     }
                     self.log(format!("  → select {selector} = {value}"));
                     let js = format!(
@@ -635,38 +769,62 @@ impl BrowserExecutor {
                 }
 
                 "wait_ga" => {
-                    let variable = render_opt(
+                    let raw_var = render_opt(
                         step.variable
                             .as_deref()
                             .or(step.name.as_deref())
                             .or(Some("code")),
                         &ctx,
                     );
-                    // 通知後端需要 GA 碼
-                    request_ga(
-                        &self.http_client,
-                        &self.cfg,
-                        self.task.task_id,
-                        &self.task.order_no,
-                        &variable,
-                    )
-                    .await;
-                    self.log("  🔐 已通知用戶輸入 GA 碼，等待中...");
+                    let variable = raw_var.trim_start_matches('{').trim_end_matches('}').trim().to_string();
+                    let variable = if variable.is_empty() { "code".to_string() } else { variable };
 
-                    let timeout_s = step.timeout.unwrap_or(120);
-                    let ga_code = poll_ga(
-                        &self.http_client,
-                        &self.cfg,
-                        self.task.task_id,
-                        timeout_s,
-                        &self.should_stop,
-                    )
-                    .await;
+                    // 若 ctx 已有該變數（通常來自先前的 captcha_prefetch 一次性收集帳密+GA），
+                    // 直接沿用，跳過再次彈出倒計時頁。
+                    let cached = {
+                        let guard = ctx_lock.lock().unwrap();
+                        guard
+                            .get(&variable)
+                            .cloned()
+                            .or_else(|| guard.get("code").cloned())
+                            .or_else(|| guard.get("ga_code").cloned())
+                            .filter(|s| !s.is_empty())
+                    };
 
-                    if ga_code.is_empty() {
-                        self.log("  ❌ GA 等待超時");
-                        return Err(anyhow!("GA 等待超時"));
-                    }
+                    let ga_code = if let Some(code) = cached {
+                        self.log(format!(
+                            "  ↳ wait_ga: 沿用先前已收集的 {{{{{variable}}}}}（跳過二次輸入）"
+                        ));
+                        code
+                    } else {
+                        // 通知後端需要 GA 碼
+                        request_ga(
+                            &self.http_client,
+                            &self.cfg,
+                            self.task.task_id,
+                            &self.task.order_no,
+                            &variable,
+                        )
+                        .await;
+                        self.log("  🔐 已通知用戶輸入 GA 碼，等待中...");
+
+                        // timeout 欄位只管元素等待；用戶輸入至少等 120s（.max(120) 防止被誤設短）
+                        let timeout_s = step.timeout.unwrap_or(120).max(120);
+                        let code = poll_ga(
+                            &self.http_client,
+                            &self.cfg,
+                            self.task.task_id,
+                            timeout_s,
+                            &self.should_stop,
+                        )
+                        .await;
+
+                        if code.is_empty() {
+                            self.log("  ❌ GA 等待超時");
+                            return Err(anyhow!("GA 等待超時"));
+                        }
+                        code
+                    };
 
                     {
                         let mut guard = ctx_lock.lock().unwrap();
@@ -694,13 +852,32 @@ impl BrowserExecutor {
                     if selector.is_empty() {
                         return Err(anyhow!("captcha_image 缺少 selector"));
                     }
-                    let variable = render_opt(
+                    // 重試時通知後端上一次驗證碼錯誤，讓會員重新輸入
+                    if attempt > 1 {
+                        notify_captcha_result(
+                            &self.http_client,
+                            &self.cfg,
+                            self.task.task_id,
+                            &self.task.order_no,
+                            false,
+                            "驗證碼錯誤，請重新輸入",
+                        )
+                        .await;
+                    }
+                    let raw_var = render_opt(
                         step.variable
                             .as_deref()
                             .or(step.name.as_deref())
                             .or(Some("code")),
                         &ctx,
                     );
+                    // 容錯：用戶在後台填了 {{code}} 應自動去掉大括號
+                    let variable = raw_var
+                        .trim_start_matches('{')
+                        .trim_end_matches('}')
+                        .trim()
+                        .to_string();
+                    let variable = if variable.is_empty() { "code".to_string() } else { variable };
                     self.log(format!("  → captcha_image: 截圖 {selector}，等待 {{{{{variable}}}}}"));
 
                     if !self.wait_for_selector(page, &selector, timeout_sec).await? {
@@ -736,7 +913,7 @@ impl BrowserExecutor {
                     }
 
                     self.log("  🔐 已回傳圖形驗證碼，等待用戶輸入...");
-                    let timeout_s = step.timeout.unwrap_or(120);
+                    let timeout_s = step.timeout.unwrap_or(120).max(120);
                     let code = poll_ga(
                         &self.http_client,
                         &self.cfg,
