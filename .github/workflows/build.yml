@@ -68,10 +68,14 @@ jobs:
       - name: Build release
         run: cargo build --release
 
-      - name: Package
+      - name: Package (.app bundle)
         run: |
-          mkdir -p dist
-          cp target/release/pcauto dist/
+          APP="dist/自动化浏览器工具.app"
+          mkdir -p "$APP/Contents/MacOS"
+          mkdir -p "$APP/Contents/Resources"
+          cp target/release/pcauto "$APP/Contents/MacOS/自动化浏览器工具"
+          cp assets/Info.plist "$APP/Contents/Info.plist"
+          cp assets/icon-windowed.icns "$APP/Contents/Resources/icon-windowed.icns"
           cp config.json.example dist/config.json
           cd dist && zip -r ../pcauto-macos-arm64.zip .
 
