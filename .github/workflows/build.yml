@@ -3,81 +3,88 @@ name: Build pcauto
 on:
   push:
     tags:
-      - 'v*'          # 推 tag（如 v1.0.1）時自動觸發
-  workflow_dispatch:  # 也支援手動在 GitHub 頁面點觸發
+      - 'v*'          # 推 tag（如 v2.1.0）時自動觸發
+  workflow_dispatch:  # 也可在 GitHub 頁面手動觸發
 
 jobs:
-  # ── macOS 打包 ───────────────────────────────────────────
-  build-mac:
-    runs-on: macos-latest
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Set up Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: '3.11'
-
-      - name: Install dependencies
-        run: pip install -r requirements.txt pyinstaller
-
-      - name: Build macOS app
-        run: pyinstaller pcauto.spec --clean --noconfirm
-
-      - name: Copy config template
-        run: cp config.json.example dist/config.json
-
-      - name: Zip app bundle
-        run: |
-          cd dist
-          zip -r pcauto-mac.zip pcauto.app config.json
-
-      - name: Upload macOS artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: pcauto-mac
-          path: dist/pcauto-mac.zip
-          retention-days: 30
-
   # ── Windows 打包 ─────────────────────────────────────────
   build-windows:
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
 
-      - name: Set up Python
-        uses: actions/setup-python@v5
+      - name: Install Rust stable
+        uses: dtolnay/rust-toolchain@stable
         with:
-          python-version: '3.11'
+          targets: x86_64-pc-windows-msvc
 
-      - name: Install dependencies
-        run: pip install -r requirements.txt pyinstaller
+      - name: Cache Cargo
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: windows-cargo-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: windows-cargo-
 
-      - name: Build Windows exe
-        run: pyinstaller pcauto.spec --clean --noconfirm
+      - name: Build release
+        run: cargo build --release --target x86_64-pc-windows-msvc
 
-      - name: Copy config template
-        run: |
-          if (!(Test-Path "dist\pcauto")) { New-Item -ItemType Directory "dist\pcauto" }
-          Copy-Item config.json dist\pcauto\config.json -ErrorAction SilentlyContinue
+      - name: Package
         shell: pwsh
-
-      - name: Zip exe folder
         run: |
-          cd dist
-          Compress-Archive -Path pcauto -DestinationPath pcauto-windows.zip
-        shell: pwsh
+          New-Item -ItemType Directory -Force dist\pcauto
+          Copy-Item target\x86_64-pc-windows-msvc\release\pcauto.exe dist\pcauto\
+          Copy-Item config.json.example dist\pcauto\config.json
+          Compress-Archive -Path dist\pcauto -DestinationPath pcauto-windows-x64.zip
 
-      - name: Upload Windows artifact
+      - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
           name: pcauto-windows
-          path: dist/pcauto-windows.zip
+          path: pcauto-windows-x64.zip
           retention-days: 30
 
-  # ── 發布 Release（推 tag 時才執行）─────────────────────
+  # ── macOS 打包（Apple Silicon）────────────────────────────
+  build-macos:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust stable
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache Cargo
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: macos-cargo-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: macos-cargo-
+
+      - name: Build release
+        run: cargo build --release
+
+      - name: Package
+        run: |
+          mkdir -p dist
+          cp target/release/pcauto dist/
+          cp config.json.example dist/config.json
+          cd dist && zip -r ../pcauto-macos-arm64.zip .
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: pcauto-macos
+          path: pcauto-macos-arm64.zip
+          retention-days: 30
+
+  # ── 發布 Release（推 tag 時才執行）──────────────────────
   release:
-    needs: [build-mac, build-windows]
+    needs: [build-windows, build-macos]
     runs-on: ubuntu-latest
     if: startsWith(github.ref, 'refs/tags/')
     permissions:
@@ -90,6 +97,6 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           files: |
-            pcauto-mac/pcauto-mac.zip
-            pcauto-windows/pcauto-windows.zip
+            pcauto-windows/pcauto-windows-x64.zip
+            pcauto-macos/pcauto-macos-arm64.zip
           generate_release_notes: true
