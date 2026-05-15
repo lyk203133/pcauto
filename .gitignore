@@ -41,6 +41,9 @@ Thumbs.db
 *.log
 logs/
 
+# Rust
+target/
+
 # Screenshots
 screenshots/
 
