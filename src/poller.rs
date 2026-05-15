@@ -10,15 +10,18 @@ use crate::callback::send_callback;
 use crate::config::load_config;
 use crate::models::{AppConfig, AppState, TaskData};
 
+const CALLBACK_RETRY_DELAY_SECS: u64 = 10;
+const CALLBACK_MAX_ATTEMPTS: u64 = 3;
+
 /// 掃單結果事件，由 poller 發送給 UI
 #[derive(Debug)]
 #[allow(dead_code)]
 pub enum PollEvent {
     Log(String),
-    TaskStarted(String),           // order_no
-    TaskDone(String, bool),        // order_no, success
-    Countdown(u64),                // 距下次掃單剩餘秒數（0=正在掃單）
-    ActiveCount(usize),            // 當前活躍任務數
+    TaskStarted(String),    // order_no
+    TaskDone(String, bool), // order_no, success
+    Countdown(u64),         // 距下次掃單剩餘秒數（0=正在掃單）
+    ActiveCount(usize),     // 當前活躍任務數
 }
 
 pub struct Poller {
@@ -172,7 +175,10 @@ async fn poll_once(
                     if tasks.is_empty() {
                         log(format!("🔍 無待處理任務（{elapsed:.2}s）"));
                     } else {
-                        log(format!("📋 發現 {} 個待處理任務（{elapsed:.2}s）", tasks.len()));
+                        log(format!(
+                            "📋 發現 {} 個待處理任務（{elapsed:.2}s）",
+                            tasks.len()
+                        ));
                     }
 
                     for task in tasks {
@@ -270,14 +276,92 @@ async fn start_task(
             }
         });
 
-        let executor = BrowserExecutor::new(cfg_clone.clone(), task, log_tx_inner, task_stop);
-        let success = executor.run().await;
+        let executor = BrowserExecutor::new(
+            cfg_clone.clone(),
+            task.clone(),
+            log_tx_inner.clone(),
+            Arc::clone(&task_stop),
+        );
+        let run_result = executor.run().await;
+        let (mut success, final_callback): (bool, Option<(i32, String, Option<String>, &str)>) =
+            match run_result {
+                Ok(true) => (
+                    true,
+                    Some((
+                        2,
+                        "pcauto 自動化全部步驟已完成，準備完成訂單".to_string(),
+                        None,
+                        "完成",
+                    )),
+                ),
+                Ok(false) => (false, None),
+                Err(failure) => (
+                    false,
+                    Some((3, failure.reason, failure.failure_image_data, "失敗")),
+                ),
+            };
 
-        // 發送最終回調
-        let status = if success { 2 } else { 3 };
-        let cb_result = send_callback(&client_clone, &cfg_clone, task_id, &order_no, status).await;
-        if let Err(e) = cb_result {
-            let _ = event_tx_clone.send(PollEvent::Log(format!("❌ 回調失敗: {e}")));
+        if let Some((callback_status, callback_reason, failure_image_data, callback_label)) =
+            final_callback
+        {
+            // 發送最終回調；短暫重試後釋放本地任務槽，避免一個回調異常長期卡住掃單。
+            let mut attempt = 0;
+            loop {
+                if task_stop.load(Ordering::Relaxed) {
+                    break;
+                }
+                attempt += 1;
+
+                match send_callback(
+                    &client_clone,
+                    &cfg_clone,
+                    task_id,
+                    &order_no,
+                    callback_status,
+                    &callback_reason,
+                    failure_image_data.as_deref(),
+                )
+                .await
+                {
+                    Ok(true) => break,
+                    Ok(false) => {
+                        if attempt >= CALLBACK_MAX_ATTEMPTS {
+                            success = false;
+                            let _ = event_tx_clone.send(PollEvent::Log(format!(
+                                "❌ {callback_label}回調被後端拒絕；已失敗 {attempt}/{CALLBACK_MAX_ATTEMPTS} 次，釋放任務"
+                            )));
+                            break;
+                        }
+                        let _ = event_tx_clone.send(PollEvent::Log(format!(
+                            "❌ {callback_label}回調被後端拒絕；第 {attempt}/{CALLBACK_MAX_ATTEMPTS} 次失敗，{CALLBACK_RETRY_DELAY_SECS}s 後重試，暫不釋放任務"
+                        )));
+                        for _ in 0..CALLBACK_RETRY_DELAY_SECS {
+                            if task_stop.load(Ordering::Relaxed) {
+                                break;
+                            }
+                            tokio::time::sleep(Duration::from_secs(1)).await;
+                        }
+                    }
+                    Err(e) => {
+                        if attempt >= CALLBACK_MAX_ATTEMPTS {
+                            success = false;
+                            let _ = event_tx_clone.send(PollEvent::Log(format!(
+                                "❌ {callback_label}回調失敗: {e}；已失敗 {attempt}/{CALLBACK_MAX_ATTEMPTS} 次，釋放任務"
+                            )));
+                            break;
+                        }
+                        let _ = event_tx_clone.send(PollEvent::Log(format!(
+                            "❌ {callback_label}回調失敗: {e}；第 {attempt}/{CALLBACK_MAX_ATTEMPTS} 次失敗，{CALLBACK_RETRY_DELAY_SECS}s 後重試，暫不釋放任務"
+                        )));
+                        for _ in 0..CALLBACK_RETRY_DELAY_SECS {
+                            if task_stop.load(Ordering::Relaxed) {
+                                break;
+                            }
+                            tokio::time::sleep(Duration::from_secs(1)).await;
+                        }
+                    }
+                }
+            }
         }
 
         // 從活躍集合移除

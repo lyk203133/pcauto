@@ -11,8 +11,8 @@ type HmacSha256 = Hmac<Sha256>;
 /// message = "{order_no}|{status}|{timestamp}"
 pub fn compute_hmac(secret: &str, order_no: &str, status: i32, timestamp: u64) -> String {
     let message = format!("{order_no}|{status}|{timestamp}");
-    let mut mac = HmacSha256::new_from_slice(secret.as_bytes())
-        .expect("HMAC can take key of any size");
+    let mut mac =
+        HmacSha256::new_from_slice(secret.as_bytes()).expect("HMAC can take key of any size");
     mac.update(message.as_bytes());
     let result = mac.finalize();
     hex::encode(result.into_bytes())
@@ -26,6 +26,8 @@ pub async fn send_callback(
     task_id: u64,
     order_no: &str,
     status: i32,
+    reason: &str,
+    failure_image_data: Option<&str>,
 ) -> Result<bool> {
     let server_url = cfg.server_url.trim_end_matches('/');
     if server_url.is_empty() || cfg.api_key.is_empty() {
@@ -41,13 +43,18 @@ pub async fn send_callback(
 
     let sign = compute_hmac(&cfg.hmac_secret, order_no, status, timestamp);
 
-    let payload = serde_json::json!({
+    let mut payload = serde_json::json!({
         "task_id": task_id,
         "order_no": order_no,
         "status": status,
+        "reason": reason,
+        "error_msg": if status == 3 { reason } else { "" },
         "timestamp": timestamp,
         "sign": sign,
     });
+    if let Some(image_data) = failure_image_data.map(str::trim).filter(|v| !v.is_empty()) {
+        payload["failure_image_data"] = serde_json::json!(image_data);
+    }
 
     let resp = client
         .post(&callback_url)
@@ -60,7 +67,11 @@ pub async fn send_callback(
     let status_code = resp.status();
     if status_code.is_success() {
         let body: serde_json::Value = resp.json().await.unwrap_or_default();
-        if body.get("success").and_then(|v| v.as_bool()).unwrap_or(false) {
+        if body
+            .get("success")
+            .and_then(|v| v.as_bool())
+            .unwrap_or(false)
+        {
             tracing::info!("回調成功: {order_no} status={status}");
             return Ok(true);
         }
@@ -78,8 +89,13 @@ pub async fn send_step_callback(
     task_id: u64,
     order_no: &str,
     step: &str,
+    step_name: &str,
+    action: &str,
+    attempt: u64,
+    max_retries: u64,
     status: &str,
     message: &str,
+    reason: Option<&str>,
 ) {
     let server_url = cfg.server_url.trim_end_matches('/');
     if server_url.is_empty() || cfg.api_key.is_empty() {
@@ -90,8 +106,13 @@ pub async fn send_step_callback(
         "task_id": task_id,
         "order_no": order_no,
         "step": step,
+        "step_name": step_name,
+        "action": action,
+        "attempt": attempt,
+        "max_retries": max_retries,
         "status": status,
         "message": message,
+        "reason": reason.unwrap_or(""),
     });
     let result = client
         .post(&url)

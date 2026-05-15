@@ -47,9 +47,10 @@ impl AutoBrowserApp {
             return;
         }
         if self.cfg.server_url.is_empty() || self.cfg.api_key.is_empty() {
-            self.state.lock().unwrap().push_log(
-                "⚠️ 後端 URL 或 API Key 未設定，請先在設定中配置",
-            );
+            self.state
+                .lock()
+                .unwrap()
+                .push_log("⚠️ 後端 URL 或 API Key 未設定，請先在設定中配置");
             return;
         }
 
@@ -77,7 +78,10 @@ impl AutoBrowserApp {
                     .cloned()
                     .or_else(|| e.downcast_ref::<&str>().map(|s| s.to_string()))
                     .unwrap_or_else(|| "未知錯誤".to_string());
-                self.state.lock().unwrap().push_log(format!("❌ 啟動失敗: {msg}"));
+                self.state
+                    .lock()
+                    .unwrap()
+                    .push_log(format!("❌ 啟動失敗: {msg}"));
             }
         }
     }
@@ -142,14 +146,22 @@ impl eframe::App for AutoBrowserApp {
         egui::CentralPanel::default()
             .frame(
                 egui::Frame::none()
-                    .fill(egui::Color32::from_rgb(0xF2, 0xF2, 0xF7)),
+                    .fill(egui::Color32::from_rgb(0xF2, 0xF2, 0xF7))
+                    .inner_margin(egui::Margin {
+                        left: 14.0,
+                        right: 18.0,
+                        top: 0.0,
+                        bottom: 0.0,
+                    }),
             )
             .show(ctx, |ui| {
                 let available = ui.available_rect_before_wrap();
+                let content_width = (available.width() - 12.0).max(0.0);
                 egui::ScrollArea::vertical()
+                    .max_width(content_width)
                     .auto_shrink([false, false])
                     .show(ui, |ui| {
-                        ui.set_min_width(available.width());
+                        ui.set_width(content_width);
                         ui.add_space(8.0);
 
                         // ── 標題 ──────────────────────────────────────────
@@ -279,15 +291,19 @@ impl eframe::App for AutoBrowserApp {
 
                         // ── 日誌面板 ──────────────────────────────────────
                         let log_height = (available.height() - 260.0).max(200.0);
+                        let log_inner_height = (log_height - 16.0).max(160.0);
                         egui::Frame::none()
                             .fill(egui::Color32::from_rgb(0x1C, 0x1C, 0x1E))
                             .rounding(10.0)
                             .inner_margin(egui::Margin::same(8.0))
                             .show(ui, |ui| {
                                 ui.set_min_width(ui.available_width());
+                                ui.set_min_height(log_inner_height);
                                 egui::ScrollArea::vertical()
                                     .id_salt("log_scroll")
-                                    .max_height(log_height)
+                                    .max_height(log_inner_height)
+                                    .min_scrolled_height(log_inner_height)
+                                    .auto_shrink([false, false])
                                     .stick_to_bottom(true)
                                     .show(ui, |ui| {
                                         for entry in &logs {
@@ -359,13 +375,16 @@ fn setup_fonts(ctx: &egui::Context) {
 
     for path in &candidates {
         if let Ok(data) = std::fs::read(path) {
-            fonts.font_data.insert(
-                "cjk".to_owned(),
-                egui::FontData::from_owned(data),
-            );
+            fonts
+                .font_data
+                .insert("cjk".to_owned(), egui::FontData::from_owned(data));
             // 作為 fallback 加在預設字體後面
             for family in [egui::FontFamily::Proportional, egui::FontFamily::Monospace] {
-                fonts.families.entry(family).or_default().push("cjk".to_owned());
+                fonts
+                    .families
+                    .entry(family)
+                    .or_default()
+                    .push("cjk".to_owned());
             }
             tracing::info!("已載入字體: {path}");
             break;

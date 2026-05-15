@@ -33,7 +33,7 @@ fn main() {
         viewport: egui::ViewportBuilder::default()
             .with_title("🤖 AutoBrowser")
             .with_always_on_top()
-            .with_inner_size([300.0, 800.0]),
+            .with_inner_size([300.0, 600.0]),
         ..Default::default()
     };
 

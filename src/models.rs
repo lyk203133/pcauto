@@ -6,6 +6,7 @@ use std::collections::HashMap;
 #[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct StepAction {
     pub action: String,
+    pub step_name: Option<String>,
     pub selector: Option<String>,
     pub value: Option<String>,
     pub url: Option<String>,
@@ -21,6 +22,8 @@ pub struct StepAction {
     pub variable: Option<String>,
     #[serde(default, deserialize_with = "de_opt_u64")]
     pub timeout: Option<u64>,
+    #[serde(default, deserialize_with = "de_opt_u64")]
+    pub max_retries: Option<u64>,
 }
 
 fn de_opt_u64<'de, D>(deserializer: D) -> Result<Option<u64>, D::Error>
@@ -150,6 +153,7 @@ pub struct AppConfig {
     pub poll_interval: u64,
     pub max_concurrent_tasks: usize,
     pub browser_type: String,
+    pub show_browser: bool,
     pub proxy: Option<String>,
 }
 
@@ -158,10 +162,12 @@ impl Default for AppConfig {
         AppConfig {
             server_url: "http://localhost:8088".to_string(),
             api_key: "b3e377b9cff032a348861bf7b3e57fdddddad1d65a20771ca3d0d99127a56c59".to_string(),
-            hmac_secret: "b3e377b9cff032a348861bf7b3e57fdddddad1d65a20771ca3d0d99127a56c59".to_string(),
+            hmac_secret: "b3e377b9cff032a348861bf7b3e57fdddddad1d65a20771ca3d0d99127a56c59"
+                .to_string(),
             poll_interval: 5,
             max_concurrent_tasks: 3,
             browser_type: "chrome".to_string(),
+            show_browser: true,
             proxy: None,
         }
     }
@@ -196,20 +202,32 @@ impl LogEntry {
     }
 
     fn classify(msg: &str) -> LogLevel {
-        if msg.contains("❌") || msg.contains("error") || msg.contains("錯誤")
-            || msg.contains("失敗") || msg.contains("failed")
+        if msg.contains("❌")
+            || msg.contains("error")
+            || msg.contains("錯誤")
+            || msg.contains("失敗")
+            || msg.contains("failed")
         {
             LogLevel::Error
-        } else if msg.contains("⚠") || msg.contains("warning") || msg.contains("警告")
+        } else if msg.contains("⚠")
+            || msg.contains("warning")
+            || msg.contains("警告")
             || msg.contains("驗證碼")
         {
             LogLevel::Warning
-        } else if msg.contains("✅") || msg.contains("complete") || msg.contains("完成")
-            || msg.contains("success") || msg.contains("成功") || msg.contains("✔")
+        } else if msg.contains("✅")
+            || msg.contains("complete")
+            || msg.contains("完成")
+            || msg.contains("success")
+            || msg.contains("成功")
+            || msg.contains("✔")
         {
             LogLevel::Success
-        } else if msg.contains("▶") || msg.contains("步驟") || msg.contains("Step")
-            || msg.contains("🚀") || msg.contains("🔄")
+        } else if msg.contains("▶")
+            || msg.contains("步驟")
+            || msg.contains("Step")
+            || msg.contains("🚀")
+            || msg.contains("🔄")
         {
             LogLevel::Step
         } else {

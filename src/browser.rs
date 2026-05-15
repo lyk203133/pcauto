@@ -13,13 +13,33 @@ use crate::callback::{poll_ga, request_captcha, request_ga, send_step_callback};
 use crate::models::{AppConfig, StepAction, TaskData};
 use crate::template::{render, render_opt};
 
+const STEP_RETRY_DELAY_SECS: u64 = 5;
+const DEFAULT_STEP_MAX_RETRIES: u64 = 3;
+
+#[derive(Debug, Clone)]
+pub struct TaskFailure {
+    pub reason: String,
+    pub failure_image_data: Option<String>,
+}
+
+impl TaskFailure {
+    fn new(reason: impl Into<String>) -> Self {
+        Self {
+            reason: reason.into(),
+            failure_image_data: None,
+        }
+    }
+}
+
 /// 搜尋本機已安裝的 Chrome / Chromium 執行檔路徑
 pub fn find_system_chrome() -> Option<String> {
     let candidates: Vec<String> = {
         #[cfg(target_os = "windows")]
         {
-            let pf = std::env::var("ProgramFiles").unwrap_or_else(|_| "C:\\Program Files".to_string());
-            let pf86 = std::env::var("ProgramFiles(x86)").unwrap_or_else(|_| "C:\\Program Files (x86)".to_string());
+            let pf =
+                std::env::var("ProgramFiles").unwrap_or_else(|_| "C:\\Program Files".to_string());
+            let pf86 = std::env::var("ProgramFiles(x86)")
+                .unwrap_or_else(|_| "C:\\Program Files (x86)".to_string());
             let local = std::env::var("LOCALAPPDATA").unwrap_or_default();
             vec![
                 format!("{pf}\\Google\\Chrome\\Application\\chrome.exe"),
@@ -54,7 +74,9 @@ pub fn find_system_chrome() -> Option<String> {
         }
     };
 
-    candidates.into_iter().find(|p| std::path::Path::new(p).exists())
+    candidates
+        .into_iter()
+        .find(|p| std::path::Path::new(p).exists())
 }
 
 /// 驗證碼 selector 列表
@@ -100,7 +122,7 @@ impl BrowserExecutor {
     }
 
     /// 主執行入口
-    pub async fn run(self) -> bool {
+    pub async fn run(self) -> std::result::Result<bool, TaskFailure> {
         let order_no = self.task.order_no.clone();
         self.log(format!("▶ 開始執行任務 {order_no}"));
 
@@ -108,21 +130,24 @@ impl BrowserExecutor {
         match result {
             Ok(true) => {
                 self.log(format!("✅ 任務完成: {order_no}"));
-                true
+                Ok(true)
             }
             Ok(false) => {
                 self.log(format!("⏹ 任務已停止: {order_no}"));
-                false
+                Ok(false)
             }
             Err(e) => {
-                self.log(format!("❌ 任務失敗: {order_no} — {e}"));
-                false
+                self.log(format!("❌ 任務失敗: {order_no} — {}", e.reason));
+                Err(e)
             }
         }
     }
 
-    async fn run_inner(&self) -> Result<bool> {
-        let (mut browser, page, profile_dir) = self.init_browser().await?;
+    async fn run_inner(&self) -> std::result::Result<bool, TaskFailure> {
+        let (mut browser, page, profile_dir) = self
+            .init_browser()
+            .await
+            .map_err(|e| TaskFailure::new(e.to_string()))?;
 
         let result = self.execute_steps(&page).await;
 
@@ -134,7 +159,10 @@ impl BrowserExecutor {
             let _ = browser.kill().await;
         }
 
-        if timeout(Duration::from_secs(5), browser.wait()).await.is_err() {
+        if timeout(Duration::from_secs(5), browser.wait())
+            .await
+            .is_err()
+        {
             self.log("⚠️ 等待 Chrome 退出超時，嘗試強制結束");
             let _ = browser.kill().await;
             let _ = browser.wait().await;
@@ -164,7 +192,14 @@ impl BrowserExecutor {
             .arg("--no-first-run")
             .arg("--no-default-browser-check")
             .arg("--start-maximized")
-            .with_head();
+            .window_size(1366, 900);
+
+        if self.cfg.show_browser {
+            self.log("🪟 瀏覽器顯示模式");
+            builder = builder.with_head();
+        } else {
+            self.log("🕶 無頭瀏覽器模式");
+        }
 
         if let Some(path) = chrome_path {
             builder = builder.chrome_executable(path);
@@ -176,7 +211,9 @@ impl BrowserExecutor {
             }
         }
 
-        let config = builder.build().map_err(|e| anyhow!("BrowserConfig error: {e}"))?;
+        let config = builder
+            .build()
+            .map_err(|e| anyhow!("BrowserConfig error: {e}"))?;
 
         // 重試最多 3 次
         let mut last_err = anyhow!("未知錯誤");
@@ -184,9 +221,7 @@ impl BrowserExecutor {
             match Browser::launch(config.clone()).await {
                 Ok((mut browser, mut handler)) => {
                     // 啟動 CDP 消息處理 handler
-                    tokio::spawn(async move {
-                        while let Some(_event) = handler.next().await {}
-                    });
+                    tokio::spawn(async move { while let Some(_event) = handler.next().await {} });
 
                     match browser.new_page("about:blank").await {
                         Ok(page) => {
@@ -215,70 +250,155 @@ impl BrowserExecutor {
         Err(last_err)
     }
 
-    async fn execute_steps(&self, page: &Page) -> Result<bool> {
+    async fn execute_steps(&self, page: &Page) -> std::result::Result<bool, TaskFailure> {
         let steps = &self.task.steps;
         let total = steps.len();
         let ctx = self.task.template_context();
         // 用 Mutex 保護 ctx 以允許 wait_ga 寫入 ga_code
         let ctx = std::sync::Arc::new(std::sync::Mutex::new(ctx));
 
-        self.log(format!("▶ 開始執行任務 {}，共 {total} 步", self.task.order_no));
+        self.log(format!(
+            "▶ 開始執行任務 {}，共 {total} 步",
+            self.task.order_no
+        ));
         self.log("-".repeat(40));
 
         for (idx, step) in steps.iter().enumerate() {
-            if self.should_stop.load(Ordering::Relaxed) {
-                self.log("⏹ 用戶已停止");
-                return Ok(false);
-            }
-
             let action = &step.action;
-            self.log(format!("步驟 {}/{total}: {action}", idx + 1));
+            let max_retries = step_max_retries(step);
+            let mut attempt = 0;
 
-            // 步驟開始回調
-            send_step_callback(
-                &self.http_client,
-                &self.cfg,
-                self.task.task_id,
-                &self.task.order_no,
-                &format!("step_{}_{action}", idx + 1),
-                "running",
-                &format!("步驟 {}/{total}: {action}", idx + 1),
-            )
-            .await;
+            loop {
+                if self.should_stop.load(Ordering::Relaxed) {
+                    self.log("⏹ 用戶已停止");
+                    return Ok(false);
+                }
 
-            // 驗證碼檢測
-            if self.check_captcha(page).await {
-                self.handle_captcha(page).await;
-            }
+                attempt += 1;
 
-            let ok = self
-                .execute_step(page, step, &ctx)
-                .await;
+                let ctx_snapshot = ctx.lock().unwrap().clone();
+                let step_name = step_callback_name(step, idx + 1);
+                let description = describe_step(step, idx + 1, total, &ctx_snapshot);
+                self.log(format!(
+                    "步驟 {}/{total}: {action}（第 {attempt}/{max_retries} 次）",
+                    idx + 1
+                ));
 
-            if ok {
-                self.log(format!("  ✅ 步驟 {} 完成", idx + 1));
+                // 步驟開始回調
                 send_step_callback(
                     &self.http_client,
                     &self.cfg,
                     self.task.task_id,
                     &self.task.order_no,
                     &format!("step_{}_{action}", idx + 1),
-                    "success",
-                    &format!("步驟 {} 完成", idx + 1),
+                    &step_name,
+                    action,
+                    attempt,
+                    max_retries,
+                    "running",
+                    &format!("{description}；第 {attempt}/{max_retries} 次執行"),
+                    None,
                 )
                 .await;
-            } else {
-                self.log(format!("  ⚠️ 步驟 {} 可能未成功", idx + 1));
-                send_step_callback(
-                    &self.http_client,
-                    &self.cfg,
-                    self.task.task_id,
-                    &self.task.order_no,
-                    &format!("step_{}_{action}", idx + 1),
-                    "failed",
-                    &format!("步驟 {} 執行異常", idx + 1),
-                )
-                .await;
+
+                // 驗證碼檢測
+                if self.check_captcha(page).await {
+                    self.handle_captcha(page).await;
+                }
+
+                match self.execute_step(page, step, &ctx).await {
+                    Ok(()) => {
+                        self.log(format!("  ✅ 步驟 {} 完成", idx + 1));
+                        send_step_callback(
+                            &self.http_client,
+                            &self.cfg,
+                            self.task.task_id,
+                            &self.task.order_no,
+                            &format!("step_{}_{action}", idx + 1),
+                            &step_name,
+                            action,
+                            attempt,
+                            max_retries,
+                            "success",
+                            &format!("{description}；第 {attempt}/{max_retries} 次；結果：完成"),
+                            None,
+                        )
+                        .await;
+                        break;
+                    }
+                    Err(reason) => {
+                        if self.should_stop.load(Ordering::Relaxed) {
+                            self.log("⏹ 用戶已停止");
+                            return Ok(false);
+                        }
+
+                        if attempt >= max_retries {
+                            let final_reason = format!(
+                                "步驟 {}/{}「{}」連續失敗 {}/{} 次，最後原因：{}",
+                                idx + 1,
+                                total,
+                                step_name,
+                                attempt,
+                                max_retries,
+                                reason
+                            );
+                            self.log(format!("  ❌ {final_reason}；中斷任務並回報失敗"));
+                            send_step_callback(
+                                &self.http_client,
+                                &self.cfg,
+                                self.task.task_id,
+                                &self.task.order_no,
+                                &format!("step_{}_{action}", idx + 1),
+                                &step_name,
+                                action,
+                                attempt,
+                                max_retries,
+                                "failed",
+                                &format!(
+                                    "{description}；第 {attempt}/{max_retries} 次；結果：已達最大重試次數，中斷任務"
+                                ),
+                                Some(&final_reason),
+                            )
+                            .await;
+                            let failure_image_data =
+                                self.capture_failure_screenshot(page, &step_name).await;
+                            return Err(TaskFailure {
+                                reason: final_reason,
+                                failure_image_data,
+                            });
+                        }
+
+                        self.log(format!(
+                            "  ⏸ 步驟 {} 第 {attempt}/{max_retries} 次異常，原因：{reason}；{STEP_RETRY_DELAY_SECS}s 後重試",
+                            idx + 1,
+                        ));
+                        send_step_callback(
+                            &self.http_client,
+                            &self.cfg,
+                            self.task.task_id,
+                            &self.task.order_no,
+                            &format!("step_{}_{action}", idx + 1),
+                            &step_name,
+                            action,
+                            attempt,
+                            max_retries,
+                            "failed",
+                            &format!(
+                                "{description}；第 {attempt}/{max_retries} 次；結果：異常，等待 {STEP_RETRY_DELAY_SECS}s 後重試"
+                            ),
+                            Some(&reason),
+                        )
+                        .await;
+
+                        for _ in 0..STEP_RETRY_DELAY_SECS {
+                            if self.should_stop.load(Ordering::Relaxed) {
+                                self.log("⏹ 用戶已停止");
+                                return Ok(false);
+                            }
+                            sleep(Duration::from_secs(1)).await;
+                        }
+                    }
+                }
             }
 
             // 步驟間隨機等待 0.5~1.2s
@@ -297,9 +417,9 @@ impl BrowserExecutor {
         page: &Page,
         step: &StepAction,
         ctx_lock: &std::sync::Arc<std::sync::Mutex<HashMap<String, String>>>,
-    ) -> bool {
+    ) -> std::result::Result<(), String> {
         if self.should_stop.load(Ordering::Relaxed) {
-            return false;
+            return Err("stopped".to_string());
         }
 
         let ctx = ctx_lock.lock().unwrap().clone();
@@ -680,13 +800,38 @@ impl BrowserExecutor {
         .await;
 
         match result {
-            Ok(()) => true,
+            Ok(()) => Ok(()),
             Err(e) => {
                 if self.should_stop.load(Ordering::Relaxed) {
-                    return false;
+                    return Err("stopped".to_string());
                 }
                 self.log(format!("  ❌ 步驟執行失敗: {e}"));
-                false
+                Err(e.to_string())
+            }
+        }
+    }
+
+    async fn capture_failure_screenshot(&self, page: &Page, step_name: &str) -> Option<String> {
+        let params = chromiumoxide::page::ScreenshotParams::builder()
+            .format(chromiumoxide::cdp::browser_protocol::page::CaptureScreenshotFormat::Png)
+            .build();
+
+        match timeout(Duration::from_secs(5), page.screenshot(params)).await {
+            Ok(Ok(png)) => {
+                use base64::Engine as _;
+                self.log(format!("  📷 已截取失敗畫面：{step_name}"));
+                Some(format!(
+                    "data:image/png;base64,{}",
+                    base64::engine::general_purpose::STANDARD.encode(png)
+                ))
+            }
+            Ok(Err(e)) => {
+                self.log(format!("  ⚠️ 失敗畫面截圖失敗：{e}"));
+                None
+            }
+            Err(_) => {
+                self.log("  ⚠️ 失敗畫面截圖超時");
+                None
             }
         }
     }
@@ -809,7 +954,9 @@ impl BrowserExecutor {
                 Ok(ret) => {
                     // 檢查是否返回 false（元素未找到）
                     if ret.into_value::<bool>().unwrap_or(true) == false {
-                        self.log(format!("  ❌ {label}：元素未找到 {selector}（第{attempt}次）"));
+                        self.log(format!(
+                            "  ❌ {label}：元素未找到 {selector}（第{attempt}次）"
+                        ));
                         if attempt < max_retries {
                             sleep(Duration::from_millis(500)).await;
                         }
@@ -853,7 +1000,9 @@ impl BrowserExecutor {
             }
         }
 
-        self.log(format!("  ❌ {label}重試 {max_retries} 次仍不一致，步驟失敗"));
+        self.log(format!(
+            "  ❌ {label}重試 {max_retries} 次仍不一致，步驟失敗"
+        ));
         false
     }
 
@@ -910,6 +1059,68 @@ fn preview(value: &str, max_chars: usize) -> String {
     out
 }
 
+fn step_callback_name(step: &StepAction, index: usize) -> String {
+    step.step_name
+        .as_deref()
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+        .map(ToOwned::to_owned)
+        .unwrap_or_else(|| format!("第 {index} 步"))
+}
+
+fn step_max_retries(step: &StepAction) -> u64 {
+    step.max_retries.unwrap_or(DEFAULT_STEP_MAX_RETRIES).max(1)
+}
+
+fn describe_step(
+    step: &StepAction,
+    index: usize,
+    total: usize,
+    ctx: &HashMap<String, String>,
+) -> String {
+    let action = step.action.as_str();
+    let step_name = step_callback_name(step, index);
+    let selector = render_opt(step.selector.as_deref(), ctx);
+    let value = render_opt(step.value.as_deref(), ctx);
+    let url = render_opt(step.url.as_deref(), ctx);
+    let expected = render_opt(step.expected.as_deref(), ctx);
+    let timeout = step.timeout.unwrap_or(15);
+
+    let detail = match action {
+        "navigate" => format!("打開網址 {url}"),
+        "click" => format!("點擊元素 {selector}"),
+        "input" => format!("填寫 {selector} = {}", preview(&value, 24)),
+        "type" => format!("逐字輸入 {selector} = {}", preview(&value, 24)),
+        "select" => format!("選擇 {selector} = {}", preview(&value, 24)),
+        "wait" => {
+            let seconds = step
+                .seconds
+                .or_else(|| step.ms.map(|ms| ms as f64 / 1000.0))
+                .or_else(|| value.parse::<f64>().ok())
+                .unwrap_or(1.0);
+            format!("等待 {seconds}s")
+        }
+        "wait_text" => {
+            if expected.is_empty() {
+                format!("等待元素出現 {selector}，timeout={timeout}s")
+            } else {
+                format!("等待 {selector} 出現文字 {}", preview(&expected, 30))
+            }
+        }
+        "wait_selector" => format!("等待元素 {selector}，timeout={timeout}s"),
+        "wait_ga" => format!("等待並填入 GA/OTP 到 {selector}，timeout={timeout}s"),
+        "captcha_image" | "request_captcha" | "captcha" => {
+            format!("截取圖形驗證碼 {selector} 並等待用戶輸入，timeout={timeout}s")
+        }
+        "screenshot" => format!("保存截圖 {}", step.name.as_deref().unwrap_or("screenshot")),
+        "js" => "執行自定義 JavaScript".to_string(),
+        "scroll" => format!("滾動 {}px", step.amount.unwrap_or(500)),
+        other => format!("執行未知動作 {other}"),
+    };
+
+    format!("步驟 {index}/{total}「{step_name}」: {detail}")
+}
+
 fn unresolved_single_placeholder(raw: Option<&str>, rendered: &str) -> Option<String> {
     let raw = raw?.trim();
     if raw != rendered.trim() {
@@ -917,11 +1128,7 @@ fn unresolved_single_placeholder(raw: Option<&str>, rendered: &str) -> Option<St
     }
 
     let inner = raw.strip_prefix("{{")?.strip_suffix("}}")?.trim();
-    if inner.is_empty()
-        || !inner
-            .chars()
-            .all(|c| c.is_ascii_alphanumeric() || c == '_')
-    {
+    if inner.is_empty() || !inner.chars().all(|c| c.is_ascii_alphanumeric() || c == '_') {
         return None;
     }
 
@@ -939,7 +1146,11 @@ fn browser_profile_dir(task: &TaskData) -> PathBuf {
 
     std::env::temp_dir()
         .join("pcauto-chrome-profiles")
-        .join(format!("task-{}-{order_no}-{}-{ts}", task.task_id, std::process::id()))
+        .join(format!(
+            "task-{}-{order_no}-{}-{ts}",
+            task.task_id,
+            std::process::id()
+        ))
 }
 
 fn sanitize_profile_component(value: &str) -> String {

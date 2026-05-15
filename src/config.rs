@@ -1,9 +1,14 @@
-use std::path::PathBuf;
-use anyhow::Result;
 use crate::models::AppConfig;
+use anyhow::Result;
+use std::path::PathBuf;
 
 fn config_path() -> PathBuf {
-    // 使用 exe 旁邊的 config.json，開發模式使用當前目錄
+    // 開發模式優先使用當前目錄；打包後再使用 exe 旁邊的 config.json。
+    let cwd_config = PathBuf::from("config.json");
+    if cwd_config.exists() {
+        return cwd_config;
+    }
+
     if let Ok(exe) = std::env::current_exe() {
         if let Some(parent) = exe.parent() {
             return parent.join("config.json");
@@ -23,7 +28,9 @@ pub fn load_config() -> AppConfig {
                         // 把預設值補充進去（缺失的 key 用 default 填充）
                         let default = AppConfig::default();
                         let default_val = serde_json::to_value(&default).unwrap_or_default();
-                        if let (Some(obj), Some(dobj)) = (val.as_object_mut(), default_val.as_object()) {
+                        if let (Some(obj), Some(dobj)) =
+                            (val.as_object_mut(), default_val.as_object())
+                        {
                             for (k, v) in dobj {
                                 obj.entry(k).or_insert_with(|| v.clone());
                             }
