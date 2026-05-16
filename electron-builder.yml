@@ -39,4 +39,5 @@ nsis:
   perMachine: false
   allowToChangeInstallationDirectory: true
   shortcutName: PCauto
-publish: null
+publish:
+  provider: github

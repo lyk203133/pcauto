@@ -1,0 +1,59 @@
+name: Build and Release
+
+on:
+  push:
+    branches: [ "Electron", "main" ]
+    tags: [ "v*" ]
+  pull_request:
+    branches: [ "Electron", "main" ]
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    name: Build on ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        os: [macos-latest, windows-latest]
+
+    steps:
+    - name: Checkout Repository
+      uses: actions/checkout@v4
+
+    - name: Setup Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: 20
+        cache: 'npm'
+
+    - name: Install Dependencies
+      run: npm install
+
+    - name: Build Application
+      run: npm run build
+
+    - name: Package & Publish macOS
+      if: matrix.os == 'macos-latest'
+      env:
+        GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      run: |
+        if [[ "${{ github.event_name }}" == "pull_request" ]]; then
+          npx electron-builder --mac
+        else
+          npx electron-builder --mac --publish always
+        fi
+      shell: bash
+
+    - name: Package & Publish Windows
+      if: matrix.os == 'windows-latest'
+      env:
+        GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      run: |
+        if [[ "${{ github.event_name }}" == "pull_request" ]]; then
+          npx electron-builder --win
+        else
+          npx electron-builder --win --publish always
+        fi
+      shell: bash
