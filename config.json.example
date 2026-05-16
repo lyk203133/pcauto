@@ -1,7 +1,10 @@
 {
-  "server_url": "https://your-server.com",
-  "api_key": "your-pcauto-api-key-here",
-  "hmac_secret": "your-hmac-secret-here",
+  "server_url": "http://localhost:8088",
+  "api_key": "REPLACE_WITH_API_KEY",
+  "hmac_secret": "REPLACE_WITH_HMAC_SECRET",
   "poll_interval": 5,
-  "max_concurrent_tasks": 3
+  "max_concurrent_tasks": 3,
+  "browser_type": "chrome",
+  "show_browser": true,
+  "proxy": null
 }

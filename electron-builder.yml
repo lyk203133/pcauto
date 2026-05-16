@@ -1,0 +1,42 @@
+appId: com.pcauto.app
+productName: PCauto
+asar: true
+asarUnpack:
+  - "node_modules/playwright/**"
+  - "node_modules/playwright-core/**"
+files:
+  - "dist/**"
+  - "package.json"
+  - "!**/*.map"
+extraResources:
+  - from: resources
+    to: .
+directories:
+  output: release
+  buildResources: build
+mac:
+  category: public.app-category.developer-tools
+  target:
+    - target: dmg
+      arch:
+        - x64
+        - arm64
+    - target: zip
+      arch:
+        - x64
+        - arm64
+  icon: resources/icon.icns
+  hardenedRuntime: true
+  gatekeeperAssess: false
+win:
+  target:
+    - target: nsis
+      arch:
+        - x64
+  icon: resources/icon.ico
+nsis:
+  oneClick: false
+  perMachine: false
+  allowToChangeInstallationDirectory: true
+  shortcutName: PCauto
+publish: null

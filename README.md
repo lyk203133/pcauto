@@ -1,136 +1,134 @@
-# 自动化浏览器工具 v2.0
+# pcauto-next
 
-基于 CloakBrowser 的 Windows 桌面自动化程序。
+Electron + TypeScript + Playwright re-implementation of the Rust pcauto.
+Behaviour parity with the Rust version is the design goal — every step action,
+HMAC signature, and API call must remain byte-identical so the existing
+`trader-system` backend keeps working unchanged.
 
-**核心理念：一个网站 = 一个任务文件**
+> Project rule: only files under `pcauto/pcauto-next/` belong to this
+> migration. The Rust code in `pcauto/src/` is retained for reference.
 
----
+## Quick start
 
-## 浏览器选择
-
-程序支持两种浏览器模式：
-
-| 浏览器 | 说明 | 适用场景 |
-|--------|------|----------|
-| 🕵️ **CloakBrowser** | 隐身浏览器，防检测强 | 需要绕过反爬/验证码的网站 |
-| 🌐 **系统 Chrome** | 使用你电脑安装的 Chrome | 普通网站测试，开发调试 |
-
-在「⚙️ 浏览器配置」中选择使用的浏览器。
-
----
-
-## 功能特性
-
-- 🌐 **网站任务管理** - 每个网站独立任务文件，灵活管理多个目标
-- 🤖 **智能防检测** - CloakBrowser 隐身浏览器，reCAPTCHA v3 得分 0.9
-- 🔐 **验证码处理** - 自动检测常见验证码，暂停等待用户填写
-- ⌨️ **人类行为模拟** - 鼠标曲线、键盘延迟、滚动模式
-- 📊 **详细步骤编辑** - 可视化编辑每个点击/输入操作
-
----
-
-## 安装
-
-```bash
-pip install -r requirements.txt
+```sh
+cd pcauto/pcauto-next
+npm install
+cp config.json.example config.json   # then fill in api_key / hmac_secret
+npm run build
+npm start                            # launches the Electron GUI
 ```
 
-## 运行
+Development mode (Vite HMR for the renderer, tsc --watch for main):
 
-```bash
-python main.py
+```sh
+npm run dev:renderer    # renderer dev server on :5173
+npm run dev:main        # tsc --watch for main process
+# in a third terminal:
+PCAUTO_DEV=1 npx electron .
 ```
 
-## 打包 EXE
+## Configuration
 
-```bash
-build.bat
-```
+`config.json` is read from (in order):
 
----
+1. `process.cwd()/config.json` (development)
+2. `<execPath>/../config.json` (packaged)
+3. `app.getPath('userData')/config.json` (Electron preferred)
 
-## 使用教程
+The example file uses placeholder secrets — fill in real values before running.
 
-### 1. 创建网站任务
+Fields (mirror of Rust `AppConfig`):
 
-点击 **➕ 新建**，填写：
+| field | meaning |
+| --- | --- |
+| `server_url` | Backend base URL, e.g. `https://api.example.com` |
+| `api_key` | Sent as `X-Pcauto-Key` header |
+| `hmac_secret` | Used to sign final callbacks (`HMAC-SHA256(order_no|status|timestamp)`) |
+| `poll_interval` | Seconds between `/pending-tasks` calls |
+| `max_concurrent_tasks` | p-limit slot count |
+| `browser_type` | `chrome` (default). `cloakbrowser` reserved for Phase 2 |
+| `show_browser` | `false` → headless |
+| `proxy` | optional `http://host:port` |
 
-| 字段 | 说明 |
-|------|------|
-| 任务名称 | 例如：示例网站登录 |
-| 网站域名 | 例如：https://example.com |
-
-### 2. 添加操作步骤
-
-支持的步骤类型：
-
-| 类型 | 说明 | 参数 |
-|------|------|------|
-| 🌐 打开网址 | 导航到目标页面 | URL |
-| 🖱️ 点击元素 | 点击按钮/链接 | CSS选择器 |
-| 📝 填写文本 | 快速填充输入框 | 选择器 + 文本 |
-| ⌨️ 逐字输入 | 模拟人工输入 | 选择器 + 文本 |
-| 👆 悬停 | 鼠标悬停 | CSS选择器 |
-| 📜 滚动 | 页面滚动 | 像素值 |
-| 📸 截图 | 保存页面截图 | 文件名 |
-| ⏱️ 等待 | 等待时间 | 秒数 |
-| ⚡ 执行JS | 运行JavaScript | 代码 |
-
-### 3. 保存任务
-
-任务自动保存到 `tasks/` 目录，每个网站一个 JSON 文件：
+## Project layout
 
 ```
-tasks/
-├── example.com.json
-├── google.com.json
-└── my-site.com.json
+pcauto-next/
+├── package.json
+├── tsconfig*.json           # main / preload / renderer compile configs
+├── vite.config.ts           # renderer only
+├── electron-builder.yml
+├── src/
+│  ├── shared/               # ipc channels + AppConfig (main+renderer)
+│  ├── main/
+│  │  ├── index.ts           # Electron entry (= main.rs)
+│  │  ├── ipc.ts             # IPC handler registration
+│  │  ├── poller.ts          # scan loop + p-limit (= poller.rs)
+│  │  ├── config.ts          # config.json load/save (= config.rs)
+│  │  ├── template.ts        # {{var}} substitution + unresolvedSinglePlaceholder
+│  │  ├── types.ts           # StepAction/TaskData parsing (= models.rs)
+│  │  ├── logger.ts          # log classifier + broadcaster
+│  │  ├── profileDir.ts      # per-task Chrome profile directories
+│  │  ├── api/
+│  │  │  ├── http.ts         # fetch wrapper with timeouts
+│  │  │  └── callback.ts     # 9 endpoints + HMAC (= callback.rs)
+│  │  ├── browser/
+│  │  │  ├── chrome.ts       # find_system_chrome
+│  │  │  └── executor.ts     # BrowserExecutor (step loop, captcha watchdog)
+│  │  └── actions/
+│  │     ├── index.ts        # action registry
+│  │     ├── types.ts        # ActionContext + ActionHandler
+│  │     ├── _helpers.ts     # fillWithVerify, waitForAnyVisible, etc.
+│  │     ├── navigate.ts
+│  │     ├── captchaPrefetch.ts
+│  │     ├── input.ts
+│  │     ├── type.ts
+│  │     ├── click.ts
+│  │     ├── select.ts
+│  │     ├── dropdown.ts
+│  │     ├── waitText.ts
+│  │     ├── waitSelector.ts
+│  │     ├── waitGa.ts
+│  │     ├── captchaImage.ts
+│  │     ├── wait.ts
+│  │     ├── screenshot.ts
+│  │     ├── js.ts
+│  │     └── scroll.ts
+│  ├── preload/index.ts       # contextBridge -> window.pcauto
+│  └── renderer/              # React UI (= ui/app.rs)
+│     ├── index.html
+│     ├── main.tsx
+│     ├── App.tsx
+│     ├── types.d.ts
+│     ├── store/useAppStore.ts
+│     ├── components/
+│     │  ├── StatusCard.tsx
+│     │  ├── ControlBar.tsx
+│     │  ├── LogPanel.tsx
+│     │  └── SettingsDialog.tsx
+│     └── styles/globals.css
+└── resources/                # app icons (placeholder)
 ```
 
-### 4. 执行任务
+## Step action coverage
 
-1. 在左侧列表选择任务
-2. 点击 **▶ 运行任务**
-3. 浏览器自动执行步骤
-4. 如遇验证码 → 程序暂停 → 手动填写 → 点击 **✅ 验证码已解决**
-5. 继续执行
+15 actions, plus the 3 aliases `request_captcha` and `captcha` that map to
+`captcha_image`. Behaviour parity rules to be aware of:
 
----
+* `dropdown` default `option_selector` — the string in
+  `src/main/actions/dropdown.ts::DEFAULT_OPTION_SELECTOR` must remain byte-for-byte
+  identical with `browser.rs:710`.
+* `input` action checks for an *unresolved single placeholder*
+  (`{{name}}` only) before filling; on hit, it triggers `request_ga` +
+  `poll_ga`. See `template.ts::unresolvedSinglePlaceholder`.
+* `wait_ga` reuses cached `code` / `ga_code` from a prior
+  `captcha_prefetch` so the GA countdown does not pop up twice.
+* `captcha_prefetch` writes both `code` and `ga_code` keys after polling
+  `/get-credentials`.
 
-## 任务文件格式
+## Test plan (Phase 1 acceptance is owned by agent C)
 
-```json
-{
-  "name": "示例网站登录",
-  "domain": "https://example.com",
-  "description": "自动登录并提交表单",
-  "enabled": true,
-  "steps": [
-    {"type": "goto", "url": "https://example.com/login", "wait": "2"},
-    {"type": "fill", "selector": "#username", "value": "admin", "wait": "0.5"},
-    {"type": "fill", "selector": "#password", "value": "pass123", "wait": "0.5"},
-    {"type": "click", "selector": "#login-btn", "wait": "2"},
-    {"type": "scroll_down", "amount": "500", "wait": "1"},
-    {"type": "click", "selector": "#submit-btn", "wait": "3"}
-  ]
-}
-```
-
----
-
-## 常见问题
-
-### Q: 启动报 "Broken pipe"？
-A: 关闭代理和 geoip 功能，或检查网络连接。
-
-### Q: 验证码检测不到？
-A: 可根据目标网站自定义选择器列表。
-
----
-
-## 技术栈
-
-- Python 3.10+
-- PyQt5
-- CloakBrowser
-- PyInstaller
+* HMAC `({secret, order_no, status, ts}) -> hex` must match Rust output bit-for-bit.
+* `dropdown` default `option_selector` string equality.
+* `unresolvedSinglePlaceholder` fixture parity.
+* Smoke test: SEAB / OCB / ACB at least 3 orders each.
