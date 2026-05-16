@@ -691,6 +691,123 @@ impl BrowserExecutor {
                     page.evaluate(js.as_str()).await.map_err(|e| anyhow!("select evaluate: {e}"))?;
                 }
 
+                // 自訂下拉（非原生 <select>）：點 trigger → 等選項出現 → 找文字符合的選項點擊
+                "dropdown" => {
+                    if selector.is_empty() {
+                        return Err(anyhow!("dropdown 缺少 selector（trigger 元素）"));
+                    }
+                    if value.is_empty() {
+                        return Err(anyhow!("dropdown 缺少 value（要選的選項文字）"));
+                    }
+                    let option_sel = step
+                        .option_selector
+                        .as_deref()
+                        .map(str::trim)
+                        .filter(|s| !s.is_empty())
+                        .map(|s| render(s, &ctx))
+                        .unwrap_or_else(|| {
+                            // 預設常見的選項選擇器
+                            "[role=\"option\"], [role=\"menuitem\"], .dropdown-item, .ant-select-item, .el-select-dropdown__item, li".to_string()
+                        });
+                    let match_type = step
+                        .match_type
+                        .as_deref()
+                        .map(str::trim)
+                        .filter(|s| !s.is_empty())
+                        .unwrap_or("contains");
+                    let exact = match_type.eq_ignore_ascii_case("exact");
+
+                    // 1) 等 trigger 出現並點擊
+                    if !self.wait_for_selector(page, &selector, timeout_sec).await? {
+                        return Err(anyhow!("dropdown: 等待 trigger 超時 {selector}"));
+                    }
+                    self.log(format!("  → dropdown 開啟 {selector}"));
+                    let trigger = page
+                        .find_element(selector.as_str())
+                        .await
+                        .map_err(|e| anyhow!("dropdown find trigger: {e}"))?;
+                    trigger.click().await.map_err(|e| anyhow!("dropdown click trigger: {e}"))?;
+
+                    // 2) 輪詢等選項清單出現、找文字符合的可見項，點擊
+                    self.log(format!("  → dropdown 選項 {option_sel} = \"{value}\""));
+                    let pick_js = format!(
+                        r#"new Promise((resolve) => {{
+                            var deadline = Date.now() + {ms};
+                            var optSel = {opt_sel};
+                            var target = {val};
+                            var exact = {exact};
+                            function norm(s) {{
+                                return (s || '').replace(/\s+/g, ' ').trim();
+                            }}
+                            function isVisible(el) {{
+                                if (!el) return false;
+                                var r = el.getBoundingClientRect();
+                                if (!(r.width > 0 || r.height > 0)) return false;
+                                var cs = getComputedStyle(el);
+                                return cs.visibility !== 'hidden' && cs.display !== 'none' && cs.opacity !== '0';
+                            }}
+                            function tryPick() {{
+                                var nodes = document.querySelectorAll(optSel);
+                                var t = norm(target).toLowerCase();
+                                for (var i = 0; i < nodes.length; i++) {{
+                                    var el = nodes[i];
+                                    if (!isVisible(el)) continue;
+                                    var txt = norm(el.innerText || el.textContent || '').toLowerCase();
+                                    var ok = exact ? (txt === t) : (txt.indexOf(t) !== -1);
+                                    if (ok) {{
+                                        el.scrollIntoView({{block: 'nearest'}});
+                                        el.click();
+                                        resolve({{ ok: true, text: el.innerText || el.textContent || '' }});
+                                        return;
+                                    }}
+                                }}
+                                if (Date.now() > deadline) {{
+                                    var sample = [];
+                                    document.querySelectorAll(optSel).forEach(function (el) {{
+                                        if (sample.length < 8 && isVisible(el)) {{
+                                            sample.push(norm(el.innerText || el.textContent || ''));
+                                        }}
+                                    }});
+                                    resolve({{ ok: false, sample: sample }});
+                                    return;
+                                }}
+                                setTimeout(tryPick, 150);
+                            }}
+                            tryPick();
+                        }})"#,
+                        ms = timeout_sec * 1000,
+                        opt_sel = serde_json::to_string(&option_sel).unwrap_or_default(),
+                        val = serde_json::to_string(&value).unwrap_or_default(),
+                        exact = if exact { "true" } else { "false" },
+                    );
+                    let result = page
+                        .evaluate(pick_js.as_str())
+                        .await
+                        .map_err(|e| anyhow!("dropdown evaluate: {e}"))?;
+                    let value_json = result.into_value::<serde_json::Value>().unwrap_or_default();
+                    let ok = value_json.get("ok").and_then(|v| v.as_bool()).unwrap_or(false);
+                    if !ok {
+                        let sample = value_json
+                            .get("sample")
+                            .and_then(|v| v.as_array())
+                            .map(|arr| {
+                                arr.iter()
+                                    .filter_map(|x| x.as_str())
+                                    .collect::<Vec<_>>()
+                                    .join(" | ")
+                            })
+                            .unwrap_or_default();
+                        return Err(anyhow!(
+                            "dropdown 找不到選項「{value}」（{match_type}）；可見選項: [{sample}]"
+                        ));
+                    }
+                    let picked = value_json
+                        .get("text")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or("");
+                    self.log(format!("  ✓ dropdown 選中: {}", preview(picked, 30)));
+                }
+
                 "wait" => {
                     let seconds = step
                         .seconds
@@ -1269,6 +1386,7 @@ fn describe_step(
         "input" => format!("填寫 {selector} = {}", preview(&value, 24)),
         "type" => format!("逐字輸入 {selector} = {}", preview(&value, 24)),
         "select" => format!("選擇 {selector} = {}", preview(&value, 24)),
+        "dropdown" => format!("下拉 {selector} → 選「{}」", preview(&value, 24)),
         "wait" => {
             let seconds = step
                 .seconds

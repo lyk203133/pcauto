@@ -21,6 +21,9 @@ pub struct StepAction {
     pub name: Option<String>,
     pub variable: Option<String>,
     pub captcha_type: Option<String>, // captcha_prefetch 用：image | ga
+    #[serde(default, alias = "options_selector")]
+    pub option_selector: Option<String>, // dropdown 用：選項元素 CSS
+    pub match_type: Option<String>,      // dropdown 用：exact | contains（預設 contains）
     #[serde(default, deserialize_with = "de_opt_u64")]
     pub timeout: Option<u64>,
     #[serde(default, deserialize_with = "de_opt_u64")]
