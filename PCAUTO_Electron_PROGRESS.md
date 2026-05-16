@@ -40,6 +40,10 @@
 | 2026-05-17 | 修復 | 修正 tsconfig.main.json / tsconfig.preload.json 的 outDir（從 `dist/main` 和 `dist/preload` 改為 `dist`，rootDir 保持 `src`），使 `dist/main/index.js` 和 `dist/preload/index.js` 路徑正確對應 `package.json` `main` 入口 |
 | 2026-05-17 | 修復 | 降版 `p-limit` 至 v3（CJS 相容），修正 `LimitFunction` 型別 import 改用 `ReturnType<typeof pLimit>` |
 | 2026-05-17 | 驗證 | `npm run build` 全通過（main + preload + renderer）；`electron .` 啟動無崩潰 |
+| 2026-05-17 | 新增 | 加入 `.github/workflows/build-and-release.yml` GitHub Actions 自動化布署流程（支援 Mac/Win） |
+| 2026-05-17 | 調整 | 更新 `electron-builder.yml` 啟用 GitHub provider 以支援發布 |
+| 2026-05-17 | 移除 | 依指示移除舊版 Rust 自動化布署設定 (`.github/workflows/build.yml`) |
+| 2026-05-17 | UI | 於 `globals.css` 標題列加入 `-webkit-app-region: drag`，支援滑鼠拖動視窗 |
 
 ---
 
