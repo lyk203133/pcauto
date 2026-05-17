@@ -14,8 +14,15 @@
 // stops are signalled by an AbortController; every long-running helper accepts a
 // `shouldStop` closure so it can bail out promptly.
 
-import { chromium as playwrightExtraChromium } from 'playwright-extra';
-import StealthPlugin from 'puppeteer-extra-plugin-stealth';
+// CloakBrowser 是純 ESM 套件，在 CommonJS Electron 環境需用動態 import() 載入。
+// tsc 會把動態 import() 轉成 require()，用 new Function 不變成 require 來繞過。
+type CloakLaunchPersistentContext = typeof import('cloakbrowser')['launchPersistentContext'];
+async function getCloakLaunch(): Promise<CloakLaunchPersistentContext> {
+  // eslint-disable-next-line @typescript-eslint/no-implied-eval
+  const dynamicImport = new Function('m', 'return import(m)') as (m: string) => Promise<typeof import('cloakbrowser')>;
+  const mod = await dynamicImport('cloakbrowser');
+  return mod.launchPersistentContext;
+}
 import type { Browser, BrowserContext, Page } from 'playwright';
 import type { AppConfig, StepAction, TaskData, TaskFailure } from '../types';
 import { buildTemplateContext } from '../types';
@@ -23,11 +30,8 @@ import { renderOpt } from '../template';
 import { lookupAction } from '../actions';
 import type { ActionContext } from '../actions/types';
 import { sendStepCallback } from '../api/callback';
-import { findSystemChrome } from './chrome';
 import { buildProfileDir, cleanupProfileDir } from '../profileDir';
 import { log as broadcastLog } from '../logger';
-
-playwrightExtraChromium.use(StealthPlugin());
 
 const STEP_RETRY_DELAY_SECS = 5;
 const DEFAULT_STEP_MAX_RETRIES = 3;
@@ -201,16 +205,14 @@ async function launchContextAndPage(
   profileDir: string,
   log: (msg: string) => void,
 ): Promise<{ context: BrowserContext | Browser; page: Page }> {
-  const chromePath = findSystemChrome();
-  if (chromePath) log(`✅ 使用系統 Chrome:${chromePath}`);
-  else log('⚠️ 未找到系統 Chrome,使用 Playwright 自帶 Chromium');
-
+  // CloakBrowser 使用 source-level C++ patches，不需手動修改 flags 或注入 JS。
+  // --disable-blink-features=AutomationControlled、navigator.webdriver、CDP 自動化信號
+  // 均在 binary 層已處理，無需額外設定。
   const args: string[] = [
     '--no-sandbox',
     '--no-first-run',
     '--no-default-browser-check',
     '--start-maximized',
-    '--disable-blink-features=AutomationControlled',
   ];
   if (cfg.proxy && cfg.proxy.length > 0) {
     args.push(`--proxy-server=${cfg.proxy}`);
@@ -218,19 +220,16 @@ async function launchContextAndPage(
 
   if (cfg.show_browser) log('🪟 瀏覽器顯示模式');
   else log('🕶 無頭瀏覽器模式');
+  log('🛡 使用 CloakBrowser 隱身引擎 (source-level stealth)');
 
-  const ctx = await playwrightExtraChromium.launchPersistentContext(profileDir, {
+  const launchPersistentContext = await getCloakLaunch();
+  const ctx = await launchPersistentContext({
+    userDataDir: profileDir,
     headless: !cfg.show_browser,
-    executablePath: chromePath ?? undefined,
     args,
     viewport: { width: 1366, height: 900 },
-    ignoreDefaultArgs: ['--enable-automation'],
+    humanize: true,
   });
-
-  // navigator.webdriver override (Rust did this too).
-  await ctx.addInitScript(
-    `Object.defineProperty(navigator, 'webdriver', { get: () => undefined });`,
-  );
 
   let page: Page;
   const pages = ctx.pages();
@@ -239,7 +238,7 @@ async function launchContextAndPage(
   } else {
     page = await ctx.newPage();
   }
-  log('✅ Chrome 啟動成功');
+  log('✅ CloakBrowser 啟動成功');
   return { context: ctx, page };
 }
 

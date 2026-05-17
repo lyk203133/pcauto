@@ -1,8 +1,8 @@
 {
-  "name": "pcauto-next",
-  "productName": "PCauto",
+  "name": "autobrowser",
+  "productName": "AutoBrowser",
   "version": "2.0.2",
-  "description": "PCauto Electron + TypeScript + Playwright (migration from Rust)",
+  "description": "AutoBrowser Electron + TypeScript + CloakBrowser",
   "main": "dist/main/index.js",
   "private": true,
   "scripts": {
@@ -20,11 +20,11 @@
     "postinstall": "electron-builder install-app-deps || true"
   },
   "dependencies": {
+    "cloakbrowser": "^0.3.28",
     "p-limit": "^3.1.0",
     "pino": "^9.5.0",
     "playwright": "^1.48.0",
-    "playwright-extra": "^4.3.6",
-    "puppeteer-extra-plugin-stealth": "^2.11.2"
+    "playwright-core": "^1.60.0"
   },
   "devDependencies": {
     "@types/node": "^20.14.0",

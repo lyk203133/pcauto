@@ -1,5 +1,5 @@
-appId: com.pcauto.app
-productName: PCauto
+appId: com.autobrowser.app
+productName: AutoBrowser
 asar: true
 asarUnpack:
   - "node_modules/playwright/**"
@@ -38,6 +38,6 @@ nsis:
   oneClick: false
   perMachine: false
   allowToChangeInstallationDirectory: true
-  shortcutName: PCauto
+  shortcutName: AutoBrowser
 publish:
   provider: github
