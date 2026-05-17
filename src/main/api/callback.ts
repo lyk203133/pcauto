@@ -1,7 +1,7 @@
-// Mirror of pcauto/src/callback.rs
+// Mirror of autobrowser/src/callback.rs
 //
 // All endpoints, headers, payload shapes and timeouts MUST match the Rust client
-// 1:1 — the PHP backend (PcautoController) is unchanged.
+// 1:1 — the PHP backend (AutoBrowserController) is unchanged.
 
 import { createHmac } from 'node:crypto';
 import type { AppConfig, GetCredentialsResponse, GetGaResponse } from '../types';
@@ -32,7 +32,7 @@ function trimTrailingSlash(s: string): string {
 function headers(cfg: AppConfig): Record<string, string> {
   return {
     'Content-Type': 'application/json',
-    'X-Pcauto-Key': cfg.api_key,
+    'X-AutoBrowser-Key': cfg.api_key,
   };
 }
 
@@ -53,7 +53,7 @@ export async function sendCallback(args: SendCallbackArgs): Promise<boolean> {
     return false;
   }
 
-  const url = `${serverUrl}/api/pcauto/callback`;
+  const url = `${serverUrl}/api/autobrowser/callback`;
   const ts = nowEpochSeconds();
   const sign = computeHmac(cfg.hmac_secret, orderNo, status, ts);
 
@@ -112,7 +112,7 @@ export async function sendStepCallback(args: StepCallbackArgs): Promise<void> {
   const { cfg } = args;
   const serverUrl = trimTrailingSlash(cfg.server_url);
   if (!serverUrl || !cfg.api_key) return;
-  const url = `${serverUrl}/api/pcauto/step-callback`;
+  const url = `${serverUrl}/api/autobrowser/step-callback`;
   const payload = {
     task_id: args.taskId,
     order_no: args.orderNo,
@@ -147,7 +147,7 @@ export async function requestGa(
 ): Promise<void> {
   const serverUrl = trimTrailingSlash(cfg.server_url);
   if (!serverUrl || !cfg.api_key) return;
-  const url = `${serverUrl}/api/pcauto/request-ga`;
+  const url = `${serverUrl}/api/autobrowser/request-ga`;
   try {
     await httpRequest(url, {
       method: 'POST',
@@ -169,7 +169,7 @@ export async function notifyCaptchaResult(
 ): Promise<void> {
   const serverUrl = trimTrailingSlash(cfg.server_url);
   if (!serverUrl || !cfg.api_key) return;
-  const url = `${serverUrl}/api/pcauto/captcha-result`;
+  const url = `${serverUrl}/api/autobrowser/captcha-result`;
   try {
     await httpRequest(url, {
       method: 'POST',
@@ -191,7 +191,7 @@ export async function requestCaptcha(
 ): Promise<boolean> {
   const serverUrl = trimTrailingSlash(cfg.server_url);
   if (!serverUrl || !cfg.api_key) return false;
-  const url = `${serverUrl}/api/pcauto/request-captcha`;
+  const url = `${serverUrl}/api/autobrowser/request-captcha`;
   try {
     const resp = await httpRequest(url, {
       method: 'POST',
@@ -219,7 +219,7 @@ export async function setNeedsCredentials(
 ): Promise<void> {
   const serverUrl = trimTrailingSlash(cfg.server_url);
   if (!serverUrl || !cfg.api_key) return;
-  const url = `${serverUrl}/api/pcauto/set-needs-credentials`;
+  const url = `${serverUrl}/api/autobrowser/set-needs-credentials`;
   try {
     await httpRequest(url, {
       method: 'POST',
@@ -245,14 +245,14 @@ export async function pollGa(
 ): Promise<string> {
   const serverUrl = trimTrailingSlash(cfg.server_url);
   if (!serverUrl || !cfg.api_key) return '';
-  const url = `${serverUrl}/api/pcauto/get-ga?task_id=${encodeURIComponent(String(taskId))}`;
+  const url = `${serverUrl}/api/autobrowser/get-ga?task_id=${encodeURIComponent(String(taskId))}`;
   const deadline = Date.now() + timeoutSec * 1000;
   while (Date.now() < deadline) {
     if (shouldStop()) return '';
     try {
       const resp = await httpRequest(url, {
         method: 'GET',
-        headers: { 'X-Pcauto-Key': cfg.api_key },
+        headers: { 'X-AutoBrowser-Key': cfg.api_key },
         timeoutMs: 5_000,
       });
       if (resp.ok) {
@@ -278,14 +278,14 @@ export async function pollCredentials(
 ): Promise<{ account: string; password: string; code: string } | undefined> {
   const serverUrl = trimTrailingSlash(cfg.server_url);
   if (!serverUrl || !cfg.api_key) return undefined;
-  const url = `${serverUrl}/api/pcauto/get-credentials?task_id=${encodeURIComponent(String(taskId))}`;
+  const url = `${serverUrl}/api/autobrowser/get-credentials?task_id=${encodeURIComponent(String(taskId))}`;
   const deadline = Date.now() + timeoutSec * 1000;
   while (Date.now() < deadline) {
     if (shouldStop()) return undefined;
     try {
       const resp = await httpRequest(url, {
         method: 'GET',
-        headers: { 'X-Pcauto-Key': cfg.api_key },
+        headers: { 'X-AutoBrowser-Key': cfg.api_key },
         timeoutMs: 5_000,
       });
       if (resp.ok) {

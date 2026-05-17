@@ -13,12 +13,12 @@ export function App(): JSX.Element {
   const [settingsOpen, setSettingsOpen] = useState(false);
 
   useEffect(() => {
-    const unsubLog = window.pcauto.onLog((e) => appendLog(e));
-    const unsubRunning = window.pcauto.onRunningState((e) => setRunning(e.running));
-    const unsubCountdown = window.pcauto.onCountdown((e) => setCountdown(e.remaining));
-    const unsubActive = window.pcauto.onActiveCount((e) => setActiveCount(e.count));
+    const unsubLog = window.autobrowser.onLog((e) => appendLog(e));
+    const unsubRunning = window.autobrowser.onRunningState((e) => setRunning(e.running));
+    const unsubCountdown = window.autobrowser.onCountdown((e) => setCountdown(e.remaining));
+    const unsubActive = window.autobrowser.onActiveCount((e) => setActiveCount(e.count));
 
-    void window.pcauto.getIsRunning().then((r) => setRunning(r));
+    void window.autobrowser.getIsRunning().then((r) => setRunning(r));
 
     return () => {
       unsubLog();

@@ -1,4 +1,4 @@
-// Mirror of pcauto/src/models.rs
+// Mirror of autobrowser/src/models.rs
 // Lenient parsing helpers (coerceOptU64/I32/F64) reproduce serde's de_opt_* tolerance.
 
 import type { AppConfig } from '../shared/config';

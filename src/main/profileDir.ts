@@ -1,4 +1,4 @@
-// Mirror of pcauto/src/browser.rs::browser_profile_dir / sanitize_profile_component
+// Mirror of autobrowser/src/browser.rs::browser_profile_dir / sanitize_profile_component
 // Plus a startup sweeper for orphan profiles older than 24h (TS-only addition,
 // see PLAN.md §7 "Cleanup timing").
 
@@ -6,7 +6,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { mkdirSync, readdirSync, rmSync, statSync } from 'node:fs';
 
-const ROOT_NAME = 'pcauto-chrome-profiles';
+const ROOT_NAME = 'autobrowser-chrome-profiles';
 const ORPHAN_AGE_MS = 24 * 60 * 60 * 1000;
 
 function sanitize(value: string): string {

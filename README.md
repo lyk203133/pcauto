@@ -1,17 +1,17 @@
-# pcauto-next
+# autobrowser-next
 
-Electron + TypeScript + Playwright re-implementation of the Rust pcauto.
+Electron + TypeScript + Playwright re-implementation of the Rust autobrowser.
 Behaviour parity with the Rust version is the design goal — every step action,
 HMAC signature, and API call must remain byte-identical so the existing
 `trader-system` backend keeps working unchanged.
 
-> Project rule: only files under `pcauto/pcauto-next/` belong to this
-> migration. The Rust code in `pcauto/src/` is retained for reference.
+> Project rule: only files under `autobrowser/autobrowser-next/` belong to this
+> migration. The Rust code in `autobrowser/src/` is retained for reference.
 
 ## Quick start
 
 ```sh
-cd pcauto/pcauto-next
+cd autobrowser/autobrowser-next
 npm install
 cp config.json.example config.json   # then fill in api_key / hmac_secret
 npm run build
@@ -24,7 +24,7 @@ Development mode (Vite HMR for the renderer, tsc --watch for main):
 npm run dev:renderer    # renderer dev server on :5173
 npm run dev:main        # tsc --watch for main process
 # in a third terminal:
-PCAUTO_DEV=1 npx electron .
+AUTOBROWSER_DEV=1 npx electron .
 ```
 
 ## Configuration
@@ -42,7 +42,7 @@ Fields (mirror of Rust `AppConfig`):
 | field | meaning |
 | --- | --- |
 | `server_url` | Backend base URL, e.g. `https://api.example.com` |
-| `api_key` | Sent as `X-Pcauto-Key` header |
+| `api_key` | Sent as `X-AutoBrowser-Key` header |
 | `hmac_secret` | Used to sign final callbacks (`HMAC-SHA256(order_no|status|timestamp)`) |
 | `poll_interval` | Seconds between `/pending-tasks` calls |
 | `max_concurrent_tasks` | p-limit slot count |
@@ -53,7 +53,7 @@ Fields (mirror of Rust `AppConfig`):
 ## Project layout
 
 ```
-pcauto-next/
+autobrowser-next/
 ├── package.json
 ├── tsconfig*.json           # main / preload / renderer compile configs
 ├── vite.config.ts           # renderer only
@@ -94,7 +94,7 @@ pcauto-next/
 │  │     ├── screenshot.ts
 │  │     ├── js.ts
 │  │     └── scroll.ts
-│  ├── preload/index.ts       # contextBridge -> window.pcauto
+│  ├── preload/index.ts       # contextBridge -> window.autobrowser
 │  └── renderer/              # React UI (= ui/app.rs)
 │     ├── index.html
 │     ├── main.tsx

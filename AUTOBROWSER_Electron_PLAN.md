@@ -1,9 +1,9 @@
-# PCAUTO Electron 遷移技術方案
+# AUTOBROWSER Electron 遷移技術方案
 
 > 從 Rust + chromiumoxide + egui 遷移至 Electron + React + TypeScript + Playwright
 >
 > 撰寫者:代理 A 撰寫時間:2026-05-16
-> 對應 git branch:`Electron`(工作目錄:`pcauto/`,新專案目錄:`pcauto/pcauto-next/`)
+> 對應 git branch:`Electron`(工作目錄:`autobrowser/`,新專案目錄:`autobrowser/autobrowser-next/`)
 >
 > **目標讀者**:代理 B(實作)、代理 C(驗收)
 
@@ -36,10 +36,10 @@
 
 ---
 
-## 2. 目錄結構(`pcauto/pcauto-next/`)
+## 2. 目錄結構(`autobrowser/autobrowser-next/`)
 
 ```
-pcauto-next/
+autobrowser-next/
 ├─ package.json
 ├─ tsconfig.json
 ├─ tsconfig.main.json          # 主進程編譯設定(target ES2022, module CommonJS)
@@ -146,7 +146,7 @@ pcauto-next/
 
 ## 4. Step Action 完整移植清單
 
-> 來源:`pcauto/src/browser.rs` L435 開始的 `match action`(總共 14 個分支 + `unknown`)。
+> 來源:`autobrowser/src/browser.rs` L435 開始的 `match action`(總共 14 個分支 + `unknown`)。
 >
 > 共識:每個 action 收到一個 `ActionContext`,回傳 `Promise<void>`(失敗 throw Error)。Selector / value / url / expected 等欄位在進 handler 前已透過 `renderOpt(ctx)` 完成 `{{var}}` 替換。
 
@@ -192,7 +192,7 @@ export type ActionHandler = (ctx: ActionContext) => Promise<void>;
 
 | 項目 | 內容 |
 |---|---|
-| Rust 行為 | `browser.rs:461-561`:`url` 為空時 fallback `{{site_url}}`;`captcha_type` ∈ `image`(預設) / `ga` / `totp`。<br>**image 分支**:`waitForSelector(captchaSelector, ms ?? 5000)` → 若找到就 `elementHandle.screenshot('png')` → base64 → `request_captcha(image_data, "code")`;沒找到就跳過。<br>**ga / totp 分支**:`request_ga("code")`。<br>無論哪個分支:呼叫 `POST /api/pcauto/set-needs-credentials` 通知後端需要帳密,然後 `poll_credentials(timeout >= 120s)` 取得 `(account, password, code)` 寫入 `vars`(同時寫 `code` 和 `ga_code` 兩個 key) |
+| Rust 行為 | `browser.rs:461-561`:`url` 為空時 fallback `{{site_url}}`;`captcha_type` ∈ `image`(預設) / `ga` / `totp`。<br>**image 分支**:`waitForSelector(captchaSelector, ms ?? 5000)` → 若找到就 `elementHandle.screenshot('png')` → base64 → `request_captcha(image_data, "code")`;沒找到就跳過。<br>**ga / totp 分支**:`request_ga("code")`。<br>無論哪個分支:呼叫 `POST /api/autobrowser/set-needs-credentials` 通知後端需要帳密,然後 `poll_credentials(timeout >= 120s)` 取得 `(account, password, code)` 寫入 `vars`(同時寫 `code` 和 `ga_code` 兩個 key) |
 | Playwright 對應 | `await page.goto(url)` → `waitForLoadState('domcontentloaded')` → 如果 `captcha_type === 'image'` 用 `page.locator(selector).first().screenshot({ type: 'png' })` |
 | 必填 | `selector`(驗證碼圖片元素)、url 或 `{{site_url}}` |
 | 選填 | `captcha_type`(預設 `image`)、`ms`(image 等待 captcha 元素秒數,預設 5)、`timeout`(等待會員輸入,最低 120s) |
@@ -341,19 +341,19 @@ export type ActionHandler = (ctx: ActionContext) => Promise<void>;
 
 ## 5. 後端 API 介面(零改動)
 
-**所有端點、HTTP method、header、payload、回應格式必須與 Rust 版完全一致**。基底路徑:`{server_url}/api/pcauto/...`,所有請求帶 header `X-Pcauto-Key: {api_key}`(除 `login` 外)。
+**所有端點、HTTP method、header、payload、回應格式必須與 Rust 版完全一致**。基底路徑:`{server_url}/api/autobrowser/...`,所有請求帶 header `X-AutoBrowser-Key: {api_key}`(除 `login` 外)。
 
 | # | 端點 | Method | Body / Query | 回應重點 | Rust 來源 |
 |---|---|---|---|---|---|
-| 1 | `/api/pcauto/pending-tasks` | GET | — | `{ tasks: TaskData[] }` | `poller.rs:140-199` |
-| 2 | `/api/pcauto/step-callback` | POST | `{ task_id, order_no, step, step_name, action, attempt, max_retries, status: "running"\|"success"\|"failed", message, reason }` | 任意(失敗不致命) | `callback.rs:86-127` |
-| 3 | `/api/pcauto/request-ga` | POST | `{ task_id, order_no, variable }` | 任意 | `callback.rs:130-157` |
-| 4 | `/api/pcauto/request-captcha` | POST | `{ task_id, order_no, image_data, variable }` `image_data` 為 `data:image/png;base64,...` | `2xx` 視為成功 | `callback.rs:192-226` |
-| 5 | `/api/pcauto/set-needs-credentials` | POST | `{ task_id, order_no, captcha_type }` | 任意 | `browser.rs:530-539`(inline) |
-| 6 | `/api/pcauto/get-ga` | GET | query `task_id` | `{ ready: bool, ga_code?: string, code?: string }`;`ready=true` 且 `ga_code` 或 `code` 非空時回傳 | `callback.rs:230-273` |
-| 7 | `/api/pcauto/get-credentials` | GET | query `task_id` | `{ ready: bool, account?, password?, code? }`,三者皆非空才回傳 | `callback.rs:276-319` |
-| 8 | `/api/pcauto/captcha-result` | POST | `{ task_id, order_no, success: bool, reason }` | 任意 | `callback.rs:160-189` |
-| 9 | `/api/pcauto/callback` | POST | `{ task_id, order_no, status: 2\|3, reason, error_msg, timestamp, sign, failure_image_data? }` | `{ success: bool }` | `callback.rs:23-83` |
+| 1 | `/api/autobrowser/pending-tasks` | GET | — | `{ tasks: TaskData[] }` | `poller.rs:140-199` |
+| 2 | `/api/autobrowser/step-callback` | POST | `{ task_id, order_no, step, step_name, action, attempt, max_retries, status: "running"\|"success"\|"failed", message, reason }` | 任意(失敗不致命) | `callback.rs:86-127` |
+| 3 | `/api/autobrowser/request-ga` | POST | `{ task_id, order_no, variable }` | 任意 | `callback.rs:130-157` |
+| 4 | `/api/autobrowser/request-captcha` | POST | `{ task_id, order_no, image_data, variable }` `image_data` 為 `data:image/png;base64,...` | `2xx` 視為成功 | `callback.rs:192-226` |
+| 5 | `/api/autobrowser/set-needs-credentials` | POST | `{ task_id, order_no, captcha_type }` | 任意 | `browser.rs:530-539`(inline) |
+| 6 | `/api/autobrowser/get-ga` | GET | query `task_id` | `{ ready: bool, ga_code?: string, code?: string }`;`ready=true` 且 `ga_code` 或 `code` 非空時回傳 | `callback.rs:230-273` |
+| 7 | `/api/autobrowser/get-credentials` | GET | query `task_id` | `{ ready: bool, account?, password?, code? }`,三者皆非空才回傳 | `callback.rs:276-319` |
+| 8 | `/api/autobrowser/captcha-result` | POST | `{ task_id, order_no, success: bool, reason }` | 任意 | `callback.rs:160-189` |
+| 9 | `/api/autobrowser/callback` | POST | `{ task_id, order_no, status: 2\|3, reason, error_msg, timestamp, sign, failure_image_data? }` | `{ success: bool }` | `callback.rs:23-83` |
 
 ### HMAC 簽名(必須位元一致)
 
@@ -406,7 +406,7 @@ export function computeHmac(secret: string, orderNo: string, status: number, ts:
 ```
 main process (Electron)
 ├─ Poller (setInterval ${cfg.poll_interval}s)
-│   └─ 每輪呼叫 GET /api/pcauto/pending-tasks
+│   └─ 每輪呼叫 GET /api/autobrowser/pending-tasks
 │       └─ 對每筆新 task,送進 p-limit 佇列
 │
 ├─ p-limit(maxConcurrentTasks)
@@ -468,7 +468,7 @@ export function buildProfileDir(taskId: number, orderNo: string): string {
   const safeOrder = orderNo.replace(/[^A-Za-z0-9_-]/g, '_').slice(0, 80) || 'unknown';
   const dir = join(
     tmpdir(),
-    'pcauto-chrome-profiles',
+    'autobrowser-chrome-profiles',
     `task-${taskId}-${safeOrder}-${process.pid}-${Date.now()}`,
   );
   mkdirSync(dir, { recursive: true });
@@ -511,7 +511,7 @@ const page = await ctx.newPage();
 | 步驟全部成功 | `await ctx.close()` → `cleanupProfileDir(dir)` |
 | 步驟失敗(reach max retries) | 同上,在 callback `status=3` 發送**之後**才刪(失敗截圖已收完) |
 | 使用者按停止 | 同上 |
-| Electron app 退出 | 啟動時掃 `os.tmpdir()/pcauto-chrome-profiles/`,把超過 24h 的孤兒目錄一併清掉(Rust 版沒做,TS 順手做掉) |
+| Electron app 退出 | 啟動時掃 `os.tmpdir()/autobrowser-chrome-profiles/`,把超過 24h 的孤兒目錄一併清掉(Rust 版沒做,TS 順手做掉) |
 
 ### Windows 平台陷阱
 
@@ -600,11 +600,11 @@ export const Ch = {
 ### 渲染→主(雙向 invoke)
 
 ```ts
-window.pcauto.startPoller();          // → main.poller.start()
-window.pcauto.stopPoller();           // → main.poller.stop()
-window.pcauto.getConfig();            // → AppConfig
-window.pcauto.saveConfig(cfg);        // → boolean
-window.pcauto.clearLogs();            // 純 renderer 端,無 IPC
+window.autobrowser.startPoller();          // → main.poller.start()
+window.autobrowser.stopPoller();           // → main.poller.stop()
+window.autobrowser.getConfig();            // → AppConfig
+window.autobrowser.saveConfig(cfg);        // → boolean
+window.autobrowser.clearLogs();            // 純 renderer 端,無 IPC
 ```
 
 ---
@@ -615,7 +615,7 @@ window.pcauto.clearLogs();            // 純 renderer 端,無 IPC
 
 ```json
 {
-  "name": "pcauto",
+  "name": "autobrowser",
   "productName": "PCauto",
   "version": "2.0.0",
   "main": "dist/main/index.js",
@@ -632,7 +632,7 @@ window.pcauto.clearLogs();            // 純 renderer 端,無 IPC
 ### `electron-builder.yml`
 
 ```yaml
-appId: com.pcauto.app
+appId: com.autobrowser.app
 productName: PCauto
 asar: true
 asarUnpack:
@@ -708,9 +708,9 @@ publish: null   # 暫不啟用自動更新,Phase 2 再說
 - 若 ACB 跑不通,代表整體架構有問題,要趁早重新評估。
 
 **Phase 0 交付物**:
-1. `pcauto-next/` 專案骨架(目錄、tsconfig、vite、electron-builder.yml)。
+1. `autobrowser-next/` 專案骨架(目錄、tsconfig、vite、electron-builder.yml)。
 2. Electron 啟動,主視窗顯示 AutoBrowser 標題與三按鈕(StatusCard / ControlBar / LogPanel 可以是靜態)。
-3. `main/poller.ts` 跑通 `GET /api/pcauto/pending-tasks`,log 在主視窗刷新。
+3. `main/poller.ts` 跑通 `GET /api/autobrowser/pending-tasks`,log 在主視窗刷新。
 4. **以下 7 個 action 完整實作並通過單元測試**:`navigate` / `captcha_prefetch` / `input` / `click` / `wait_ga` / `wait_selector` / `wait`。
 5. 端到端跑通 ACB 一筆完整訂單(從 pending-tasks → 截圖驗證碼 → 等帳密 → 登入 → wait_ga → 填入金額 → 提交 → callback)。
 6. `callback.ts` 全部 8 個函式 + HMAC 寫好;單元測試對照 Rust 輸出。
@@ -758,7 +758,7 @@ publish: null   # 暫不啟用自動更新,Phase 2 再說
 
 **緩解**:
 - `rmSync` 包 3 次 retry + 500ms 間隔。
-- 啟動時掃 `tmpdir/pcauto-chrome-profiles/` 把 24h 以上的孤兒目錄一併清掉。
+- 啟動時掃 `tmpdir/autobrowser-chrome-profiles/` 把 24h 以上的孤兒目錄一併清掉。
 - 在 SettingsDialog 加個「清除所有暫存 profile」按鈕(Phase 1.5 可選)。
 
 ### Risk 3 — Electron 主進程與 Playwright 共用 event loop 可能阻塞 GUI
@@ -797,15 +797,15 @@ publish: null   # 暫不啟用自動更新,Phase 2 再說
 
 **風險**:每步 3 次 callback(running / success / failed),3 筆並發 × 10 步 = 90 次/任務,還有 4s timeout 可能堆積。
 
-**緩解**:沿用 Rust 的「失敗只 log 不致命」策略;後端在 PcautoController 已有 batch write,實測在 Rust 下穩定。TS 版不改設計,只確保 timeout 4s 與 Rust 一致。
+**緩解**:沿用 Rust 的「失敗只 log 不致命」策略;後端在 AutoBrowserController 已有 batch write,實測在 Rust 下穩定。TS 版不改設計,只確保 timeout 4s 與 Rust 一致。
 
 ---
 
 ## 12. 進度檢核點(給代理 B / C)
 
-代理 B 在實作時,每完成下列任一里程碑請在 `PCAUTO_Electron_PROGRESS.md` 的「代理 B」表格追加一行:
+代理 B 在實作時,每完成下列任一里程碑請在 `AUTOBROWSER_Electron_PROGRESS.md` 的「代理 B」表格追加一行:
 
-- [ ] `pcauto-next/` 骨架可啟動(空主視窗 + Hello)
+- [ ] `autobrowser-next/` 骨架可啟動(空主視窗 + Hello)
 - [ ] `callback.ts` 8 個函式 + HMAC 單測通過
 - [ ] `template.ts` 與 `unresolvedSinglePlaceholder` 單測通過
 - [ ] `navigate` / `click` / `input` / `wait_selector` / `wait` 五個基本 action 通過

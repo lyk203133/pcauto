@@ -1,4 +1,4 @@
-// Preload script — exposes a typed bridge on `window.pcauto`.
+// Preload script — exposes a typed bridge on `window.autobrowser`.
 // The renderer never imports node APIs directly.
 
 import { contextBridge, ipcRenderer } from 'electron';
@@ -43,6 +43,6 @@ function subscribe<T>(channel: string, cb: (payload: T) => void): Unsub {
   return () => ipcRenderer.removeListener(channel, handler);
 }
 
-contextBridge.exposeInMainWorld('pcauto', api);
+contextBridge.exposeInMainWorld('autobrowser', api);
 
-export type PcautoBridge = typeof api;
+export type AutoBrowserBridge = typeof api;

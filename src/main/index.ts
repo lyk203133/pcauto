@@ -1,4 +1,4 @@
-// Electron main process entry. Mirrors pcauto/src/main.rs.
+// Electron main process entry. Mirrors autobrowser/src/main.rs.
 
 import { app, BrowserWindow, shell } from 'electron';
 import { join } from 'node:path';
@@ -7,7 +7,7 @@ import { registerIpcHandlers } from './ipc';
 import { poller } from './poller';
 import { sweepOrphanProfiles } from './profileDir';
 
-const isDev = !!process.env.PCAUTO_DEV;
+const isDev = !!process.env.AUTOBROWSER_DEV;
 const VITE_DEV_SERVER = process.env.VITE_DEV_SERVER_URL ?? 'http://localhost:5173';
 
 let mainWindow: BrowserWindow | undefined;

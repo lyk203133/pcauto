@@ -8,10 +8,10 @@ export function ControlBar({ onSettings }: Props): JSX.Element {
   const running = useAppStore((s) => s.running);
 
   const handleStart = async (): Promise<void> => {
-    await window.pcauto.startPoller();
+    await window.autobrowser.startPoller();
   };
   const handleStop = async (): Promise<void> => {
-    await window.pcauto.stopPoller();
+    await window.autobrowser.stopPoller();
   };
 
   return (

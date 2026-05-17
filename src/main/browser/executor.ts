@@ -1,4 +1,4 @@
-// Mirror of pcauto/src/browser.rs::BrowserExecutor
+// Mirror of autobrowser/src/browser.rs::BrowserExecutor
 //
 // Lifecycle:
 //   1. Launch a Chromium browserContext with a per-task profile dir.

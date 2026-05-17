@@ -1,4 +1,4 @@
-// Mirror of pcauto/src/browser.rs::find_system_chrome
+// Mirror of autobrowser/src/browser.rs::find_system_chrome
 
 import { existsSync } from 'node:fs';
 import { join } from 'node:path';

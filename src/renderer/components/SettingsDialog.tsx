@@ -14,7 +14,7 @@ export function SettingsDialog({ open, onClose }: Props): JSX.Element | null {
   useEffect(() => {
     if (!open) return;
     setLoading(true);
-    window.pcauto
+    window.autobrowser
       .getConfig()
       .then((value) => setCfg(value))
       .finally(() => setLoading(false));
@@ -27,12 +27,12 @@ export function SettingsDialog({ open, onClose }: Props): JSX.Element | null {
   };
 
   const handleSave = async (): Promise<void> => {
-    const wasRunning = await window.pcauto.getIsRunning();
-    const ok = await window.pcauto.saveConfig(cfg);
+    const wasRunning = await window.autobrowser.getIsRunning();
+    const ok = await window.autobrowser.saveConfig(cfg);
     if (!ok) return;
     if (wasRunning) {
-      await window.pcauto.stopPoller();
-      await window.pcauto.startPoller();
+      await window.autobrowser.stopPoller();
+      await window.autobrowser.startPoller();
     }
     onClose();
   };

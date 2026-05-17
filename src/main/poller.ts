@@ -1,4 +1,4 @@
-// Mirror of pcauto/src/poller.rs
+// Mirror of autobrowser/src/poller.rs
 //
 // Topology (PLAN.md §6):
 //   - setInterval-ish loop driven by `setTimeout` that calls /pending-tasks every
@@ -96,13 +96,13 @@ class Poller {
   ): Promise<void> {
     const serverUrl = cfg.server_url.replace(/\/+$/, '');
     if (!serverUrl || !cfg.api_key) return;
-    const pollUrl = `${serverUrl}/api/pcauto/pending-tasks`;
+    const pollUrl = `${serverUrl}/api/autobrowser/pending-tasks`;
     log(`>> 掃單 ${pollUrl}`);
     const t0 = Date.now();
     try {
       const resp = await httpRequest(pollUrl, {
         method: 'GET',
-        headers: { 'X-Pcauto-Key': cfg.api_key },
+        headers: { 'X-AutoBrowser-Key': cfg.api_key },
         timeoutMs: 10_000,
         signal,
       });
@@ -185,7 +185,7 @@ class Poller {
       const callback = isSuccess
         ? {
             status: 2,
-            reason: 'pcauto 自動化全部步驟已完成,準備完成訂單',
+            reason: 'autobrowser 自動化全部步驟已完成,準備完成訂單',
             label: '完成',
             failure_image_data: undefined as string | undefined,
           }

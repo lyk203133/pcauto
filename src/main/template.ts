@@ -1,4 +1,4 @@
-// Mirror of pcauto/src/template.rs
+// Mirror of autobrowser/src/template.rs
 // Regex: `\{\{\s*(\w+)\s*\}\}` — \w in Rust regex == ASCII [A-Za-z0-9_].
 // Note: the JS \w in default mode includes the same set when no Unicode flag is used.
 // We deliberately do NOT pass /u to keep parity with Rust's default ASCII semantics.

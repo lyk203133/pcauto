@@ -12,7 +12,7 @@ import type {
 
 type Unsub = () => void;
 
-interface PcautoBridge {
+interface AutoBrowserBridge {
   startPoller(): Promise<boolean>;
   stopPoller(): Promise<boolean>;
   getConfig(): Promise<AppConfig>;
@@ -28,7 +28,7 @@ interface PcautoBridge {
 
 declare global {
   interface Window {
-    pcauto: PcautoBridge;
+    autobrowser: AutoBrowserBridge;
   }
 }
 

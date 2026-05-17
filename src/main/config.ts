@@ -1,4 +1,4 @@
-// Mirror of pcauto/src/config.rs
+// Mirror of autobrowser/src/config.rs
 //
 // Load order:
 //   1. cwd/config.json (development)
