@@ -108,9 +108,10 @@ export async function fillWithVerify(
     const fillScript = `(function() {
       var el = document.querySelector(${JSON.stringify(selector)});
       if (!el) return false;
-      var nativeSetter = Object.getOwnPropertyDescriptor(
-        window.HTMLInputElement.prototype, 'value'
-      );
+      var proto = el instanceof HTMLTextAreaElement
+        ? window.HTMLTextAreaElement.prototype
+        : (el instanceof HTMLSelectElement ? window.HTMLSelectElement.prototype : window.HTMLInputElement.prototype);
+      var nativeSetter = Object.getOwnPropertyDescriptor(proto, 'value');
       if (nativeSetter && nativeSetter.set) {
         nativeSetter.set.call(el, ${JSON.stringify(value)});
       } else {
