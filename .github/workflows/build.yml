@@ -34,26 +34,62 @@ jobs:
     - name: Build Application
       run: npm run build
 
-    - name: Package & Publish macOS
+    - name: Package macOS
       if: matrix.os == 'macos-latest'
-      env:
-        GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-      run: |
-        if [[ "${{ github.event_name }}" == "pull_request" ]]; then
-          npx electron-builder --mac
-        else
-          npx electron-builder --mac --publish always
-        fi
+      run: npx electron-builder --mac --publish never
       shell: bash
 
-    - name: Package & Publish Windows
+    - name: Package Windows
       if: matrix.os == 'windows-latest'
+      run: npx electron-builder --win --publish never
+      shell: bash
+
+    - name: Upload packaged files
+      uses: actions/upload-artifact@v4
+      with:
+        name: AutoBrowser-${{ matrix.os }}
+        path: |
+          release/**
+          !release/*.blockmap
+          !release/latest*.yml
+        if-no-files-found: error
+
+  release:
+    name: Publish GitHub Release
+    needs: build
+    runs-on: ubuntu-latest
+    if: github.event_name == 'push'
+
+    steps:
+    - name: Download packaged files
+      uses: actions/download-artifact@v4
+      with:
+        path: packaged
+
+    - name: Publish Release
       env:
         GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        REF_TYPE: ${{ github.ref_type }}
+        REF_NAME: ${{ github.ref_name }}
+        RUN_NUMBER: ${{ github.run_number }}
+        SHA: ${{ github.sha }}
       run: |
-        if [[ "${{ github.event_name }}" == "pull_request" ]]; then
-          npx electron-builder --win
+        if [[ "$REF_TYPE" == "tag" ]]; then
+          TAG="$REF_NAME"
+          TITLE="AutoBrowser $REF_NAME"
         else
-          npx electron-builder --win --publish always
+          TAG="build-$RUN_NUMBER"
+          TITLE="AutoBrowser build $RUN_NUMBER"
+        fi
+
+        mapfile -t FILES < <(find packaged -type f | sort)
+
+        if gh release view "$TAG" >/dev/null 2>&1; then
+          gh release upload "$TAG" "${FILES[@]}" --clobber
+        else
+          gh release create "$TAG" "${FILES[@]}" \
+            --title "$TITLE" \
+            --notes "Automated build from commit $SHA" \
+            --target "$SHA"
         fi
       shell: bash

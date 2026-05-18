@@ -41,3 +41,4 @@ nsis:
   shortcutName: AutoBrowser
 publish:
   provider: github
+  releaseType: release
