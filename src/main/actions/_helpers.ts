@@ -142,7 +142,11 @@ export async function fillWithVerify(
       log(`  ✔ ${label}(無法回讀,視為通過)`);
       return true;
     }
-    if (actual === value) {
+    const toNum = (s: string) => parseFloat(s.replace(/[,\s]/g, ''));
+    const aNum = toNum(actual);
+    const vNum = toNum(value);
+    const numericMatch = !isNaN(aNum) && !isNaN(vNum) && aNum === vNum;
+    if (actual === value || numericMatch) {
       log(`  ✔ ${label}驗證通過(第${attempt}次)`);
       return true;
     }
