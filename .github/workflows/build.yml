@@ -49,9 +49,9 @@ jobs:
       with:
         name: AutoBrowser-${{ matrix.os }}
         path: |
-          release/**
-          !release/*.blockmap
-          !release/latest*.yml
+          release/*.dmg
+          release/*.zip
+          release/*.exe
         if-no-files-found: error
 
   release:
