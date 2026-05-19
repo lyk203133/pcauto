@@ -1,7 +1,7 @@
 {
   "name": "autobrowser",
   "productName": "AutoBrowser",
-  "version": "2.0.2",
+  "version": "2.0.7",
   "description": "AutoBrowser Electron + TypeScript + CloakBrowser",
   "main": "dist/main/index.js",
   "private": true,

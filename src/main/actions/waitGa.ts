@@ -47,9 +47,8 @@ export const waitGa: ActionHandler = async (ctx) => {
   vars.set('ga_code', gaCode);
 
   if (!rendered.selector) {
-    throw new StepError(
-      `wait_ga 缺少 selector,已保存 {{${variable}}};請在規則中配置要填入的驗證碼輸入框`,
-    );
+    log(`  ↳ wait_ga: 已保存 {{${variable}}},未配置 selector,交由後續步驟填入`);
+    return;
   }
   log(`  → wait_ga: 填入 GA 碼至 ${rendered.selector}`);
   const ok = await fillWithVerify(ctx.page, rendered.selector, gaCode, 'GA 碼', 3, log);

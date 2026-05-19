@@ -56,6 +56,13 @@ body {
   cursor: default;
 }
 
+.app-version {
+  margin-left: 6px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--muted);
+}
+
 button,
 input,
 select,

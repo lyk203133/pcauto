@@ -5,6 +5,8 @@ import { LogPanel } from './components/LogPanel';
 import { SettingsDialog } from './components/SettingsDialog';
 import { useAppStore } from './store/useAppStore';
 
+const APP_DISPLAY_VERSION = 'v2.07';
+
 export function App(): JSX.Element {
   const appendLog = useAppStore((s) => s.appendLog);
   const setRunning = useAppStore((s) => s.setRunning);
@@ -30,7 +32,7 @@ export function App(): JSX.Element {
 
   return (
     <div className="app">
-      <div className="app-title">AutoBrowser</div>
+      <div className="app-title">AutoBrowser <span className="app-version">{APP_DISPLAY_VERSION}</span></div>
       <StatusCard />
       <ControlBar onSettings={() => setSettingsOpen(true)} />
       <LogPanel />
