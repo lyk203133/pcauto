@@ -97,7 +97,6 @@ class Poller {
     const serverUrl = cfg.server_url.replace(/\/+$/, '');
     if (!serverUrl || !cfg.api_key) return;
     const pollUrl = `${serverUrl}/api/autobrowser/pending-tasks`;
-    log(`>> 掃單 ${pollUrl}`);
     const t0 = Date.now();
     try {
       const resp = await httpRequest(pollUrl, {

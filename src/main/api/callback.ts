@@ -296,7 +296,7 @@ export async function pollCredentials(
           const account = data.account ?? '';
           const password = data.password ?? '';
           const code = data.code ?? '';
-          if (account && password && code) return { account, password, code };
+          if (account && password) return { account, password, code };
         }
       }
     } catch {

@@ -319,8 +319,9 @@ async function handleOnErrorRequest(
     vars.delete('account');
     vars.delete('password');
     broadcastLog('  🔄 on_error_request=credentials：清除帳密並通知會員重填');
-    // clearCaptcha=true：清除舊驗證碼圖，讓會員頁面等待 captcha_prefetch 重跑後的新圖
-    await setNeedsCredentials(cfg, task.task_id, task.order_no, 'image', true);
+    const captchaType = task.steps.find((s) => s.action === 'captcha_prefetch')?.captcha_type ?? 'none';
+    // clearCaptcha=true：清除舊驗證碼圖；無圖驗證碼流程則只要求會員重填帳密。
+    await setNeedsCredentials(cfg, task.task_id, task.order_no, captchaType, true);
   }
 }
 
