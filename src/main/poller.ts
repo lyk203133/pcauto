@@ -118,7 +118,7 @@ class Poller {
       }
       const rawTasks = Array.isArray(data.tasks) ? data.tasks : [];
       if (rawTasks.length === 0) {
-        log(`🔍 無待處理任務(${elapsed}s)`);
+        //log(`🔍 無待處理任務(${elapsed}s)`);
       } else {
         log(`📋 發現 ${rawTasks.length} 個待處理任務(${elapsed}s)`);
       }

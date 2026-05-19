@@ -216,6 +216,7 @@ export async function setNeedsCredentials(
   taskId: number,
   orderNo: string,
   captchaType: string,
+  clearCaptcha = false,
 ): Promise<void> {
   const serverUrl = trimTrailingSlash(cfg.server_url);
   if (!serverUrl || !cfg.api_key) return;
@@ -228,6 +229,7 @@ export async function setNeedsCredentials(
         task_id: taskId,
         order_no: orderNo,
         captcha_type: captchaType,
+        clear_captcha: clearCaptcha,
       }),
       timeoutMs: 5_000,
     });
@@ -303,6 +305,26 @@ export async function pollCredentials(
     await sleep(1000, shouldStop);
   }
   return undefined;
+}
+
+export async function requeueTask(
+  cfg: AppConfig,
+  taskId: number,
+  orderNo: string,
+): Promise<void> {
+  const serverUrl = trimTrailingSlash(cfg.server_url);
+  if (!serverUrl || !cfg.api_key) return;
+  const url = `${serverUrl}/api/autobrowser/requeue-task`;
+  try {
+    await httpRequest(url, {
+      method: 'POST',
+      headers: headers(cfg),
+      body: JSON.stringify({ task_id: taskId, order_no: orderNo }),
+      timeoutMs: 5_000,
+    });
+  } catch {
+    /* non-fatal */
+  }
 }
 
 async function sleep(ms: number, shouldStop: () => boolean): Promise<void> {

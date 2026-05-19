@@ -27,6 +27,10 @@ export interface StepAction {
   match_type?: string;
   timeout?: number;
   max_retries?: number;
+  on_error_selector?: string;   // 步驟完成後若此元素可見 → 視為失敗
+  on_error_goto?: string | number; // "restart"=第1步 | "prev"=上一步 | N(1-based)=第N步
+  on_error_request?: string;   // 跳轉時通知會員重填："code"=OTP | "credentials"=帳密
+  on_error_timeout?: number;   // 等錯誤元素出現的最長秒數（預設 2）
 }
 
 export interface TaskDataRaw {
@@ -155,6 +159,16 @@ export function parseStepAction(raw: unknown): StepAction {
     match_type: asString(r['match_type']),
     timeout: coerceOptU64(r['timeout']),
     max_retries: coerceOptU64(r['max_retries']),
+    on_error_selector: asString(r['on_error_selector']),
+    on_error_timeout: coerceOptU64(r['on_error_timeout']),
+    on_error_goto: (() => {
+      const v = r['on_error_goto'];
+      if (v === undefined || v === null) return undefined;
+      if (typeof v === 'string') return v;
+      const n = coerceOptU64(v);
+      return n !== undefined ? n : undefined;
+    })(),
+    on_error_request: asString(r['on_error_request']),
   };
 }
 

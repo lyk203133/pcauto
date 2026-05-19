@@ -29,7 +29,7 @@ import { buildTemplateContext } from '../types';
 import { renderOpt } from '../template';
 import { lookupAction } from '../actions';
 import type { ActionContext } from '../actions/types';
-import { sendStepCallback } from '../api/callback';
+import { sendStepCallback, requestGa, setNeedsCredentials, requeueTask } from '../api/callback';
 import { buildProfileDir, cleanupProfileDir } from '../profileDir';
 import { log as broadcastLog } from '../logger';
 
@@ -293,6 +293,76 @@ export async function runTask(input: RunInput): Promise<RunOutput> {
   }
 }
 
+/** 跳轉時清掉 vars 中的過期值，並通知會員端重填 */
+async function handleOnErrorRequest(
+  request: string | undefined,
+  cfg: import('../types').AppConfig,
+  task: import('../types').TaskData,
+  vars: Map<string, string>,
+): Promise<void> {
+  if (!request) return;
+  const req = request.trim().toLowerCase();
+
+  // 清 code 相關 vars（OTP / GA）
+  const clearCode = () => {
+    vars.delete('code');
+    vars.delete('ga_code');
+    for (let i = 1; i <= 9; i++) vars.delete(`code${i}`);
+  };
+
+  if (req === 'code') {
+    clearCode();
+    broadcastLog('  🔄 on_error_request=code：清除 code 並通知會員重填 OTP');
+    await requestGa(cfg, task.task_id, task.order_no, 'code');
+  } else if (req === 'credentials') {
+    clearCode();
+    vars.delete('account');
+    vars.delete('password');
+    broadcastLog('  🔄 on_error_request=credentials：清除帳密並通知會員重填');
+    // clearCaptcha=true：清除舊驗證碼圖，讓會員頁面等待 captcha_prefetch 重跑後的新圖
+    await setNeedsCredentials(cfg, task.task_id, task.order_no, 'image', true);
+  }
+}
+
+/** 檢查步驟完成後是否觸發 on_error_selector，輪詢等待最多 on_error_timeout 秒（預設 2）。
+ *  回傳要跳轉的 index（0-based）、'requeue'（重置任務），或 null 表示無錯誤繼續。 */
+async function checkOnError(
+  page: Page,
+  step: import('../types').StepAction,
+  currentIdx: number,
+): Promise<number | 'requeue' | null> {
+  if (!step.on_error_selector) return null;
+  const timeoutMs = (step.on_error_timeout ?? 2) * 1000;
+  const deadline  = Date.now() + timeoutMs;
+  // 同時接受「可見」或「存在且有文字內容」，避免因 CSS 隱藏/高度為 0 而漏判
+  const script = `(function() {
+    var el = document.querySelector(${JSON.stringify(step.on_error_selector)});
+    if (!el) return false;
+    var visible = !!(el.offsetWidth || el.offsetHeight || el.getClientRects().length);
+    var hasText = (el.innerText || el.textContent || '').trim().length > 0;
+    return visible || hasText;
+  })()`;
+  let detected = false;
+  while (Date.now() < deadline) {
+    try {
+      detected = (await page.evaluate(script)) as boolean;
+      if (detected) break;
+    } catch { /* page navigating – keep polling */ }
+    await new Promise<void>((r) => setTimeout(r, 200));
+  }
+  if (!detected) return null;
+  const goto = step.on_error_goto;
+  if (goto === undefined || goto === null) return 0; // 預設 restart
+  if (goto === 'restart') return 0;
+  if (goto === 'prev') return Math.max(0, currentIdx - 1);
+  if (goto === 'requeue') return 'requeue';
+  const n = typeof goto === 'number' ? goto : Number(goto);
+  if (Number.isFinite(n) && n >= 1) return n - 1; // 1-based → 0-based
+  return 0;
+}
+
+const MAX_GOTO_COUNT = 20; // 防無限循環
+
 async function executeSteps(args: {
   cfg: AppConfig;
   task: TaskData;
@@ -307,7 +377,10 @@ async function executeSteps(args: {
   broadcastLog(`▶ 開始執行任務 ${task.order_no},共 ${total} 步`);
   broadcastLog('-'.repeat(40));
 
-  for (let idx = 0; idx < steps.length; idx++) {
+  let idx = 0;
+  let gotoCount = 0;
+
+  while (idx < steps.length) {
     const step = steps[idx]!;
     const action = step.action;
     const maxRetries = stepMaxRetries(step);
@@ -384,6 +457,40 @@ async function executeSteps(args: {
       }
 
       if (stepError === undefined) {
+        // 步驟本身成功，檢查 on_error_selector 分支
+        const gotoResult = await checkOnError(page, step, idx);
+        if (gotoResult !== null) {
+          if (gotoResult === 'requeue') {
+            // requeue：直接重置，不通知 member（新任務的 captcha_prefetch 會重新推 member 端 UI）
+            // 不送 sendStepCallback(failed)，避免後端 stepCallback 把 status 覆蓋回 3
+            broadcastLog(`  ♻️ 步驟 ${idx + 1} 偵測到錯誤條件，重置任務並重新排隊`);
+            await requeueTask(cfg, task.task_id, task.order_no);
+            return { ok: false }; // 結束本次執行，poller 會重新撿起
+          }
+
+          await handleOnErrorRequest(step.on_error_request, cfg, task, vars);
+          const gotoIdx = gotoResult;
+          gotoCount += 1;
+          if (gotoCount > MAX_GOTO_COUNT) {
+            const reason = `步驟 ${idx + 1}「${stepName}」on_error_goto 跳轉超過 ${MAX_GOTO_COUNT} 次，中止任務`;
+            broadcastLog(`  ❌ ${reason}`);
+            // eslint-disable-next-line @typescript-eslint/no-throw-literal
+            throw { reason, failure_image_data: await captureFailureScreenshot(page, stepName) };
+          }
+          broadcastLog(
+            `  ⚠️ 步驟 ${idx + 1} 偵測到錯誤條件（${step.on_error_selector}），跳轉至步驟 ${gotoIdx + 1}`,
+          );
+          await sendStepCallback({
+            cfg, taskId: task.task_id, orderNo: task.order_no,
+            step: stepKey, stepName, action, attempt, maxRetries,
+            status: 'failed',
+            message: `${description};偵測到錯誤條件，跳轉至步驟 ${gotoIdx + 1}`,
+            reason: `on_error_goto → 步驟 ${gotoIdx + 1}`,
+          });
+          idx = gotoIdx;
+          break; // 跳出 retry while，外層 while 會用新 idx
+        }
+
         broadcastLog(`  ✅ 步驟 ${idx + 1} 完成`);
         await sendStepCallback({
           cfg,
@@ -397,6 +504,7 @@ async function executeSteps(args: {
           status: 'success',
           message: `${description};第 ${attempt}/${maxRetries} 次;結果:完成`,
         });
+        idx += 1; // 正常前進
         break;
       }
 

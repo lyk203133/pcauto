@@ -17,6 +17,7 @@ import { wait } from './wait';
 import { screenshot } from './screenshot';
 import { js } from './js';
 import { scroll } from './scroll';
+import { keyboardType } from './keyboardType';
 
 export const actionRegistry: Record<string, ActionHandler> = {
   navigate,
@@ -36,6 +37,7 @@ export const actionRegistry: Record<string, ActionHandler> = {
   screenshot,
   js,
   scroll,
+  keyboard_type: keyboardType,
 };
 
 export function lookupAction(name: string): ActionHandler | undefined {
