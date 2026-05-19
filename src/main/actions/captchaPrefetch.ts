@@ -105,6 +105,5 @@ export const captchaPrefetch: ActionHandler = async (ctx) => {
   vars.set('password', credentials.password);
   if (credentials.code) {
     vars.set('code', credentials.code);
-    vars.set('ga_code', credentials.code);
   }
 };

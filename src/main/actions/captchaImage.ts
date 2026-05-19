@@ -43,6 +43,9 @@ export const captchaImage: ActionHandler = async (ctx) => {
   if (code === '') throw new StepError('圖形驗證碼等待超時');
 
   vars.set(variable, code);
-  vars.set('code', code);
-  vars.set('ga_code', code);
+  if (variable === 'ga_code') {
+     // do nothing
+  } else if (variable === 'code') {
+     // do nothing
+  }
 };

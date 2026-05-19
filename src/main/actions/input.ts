@@ -25,8 +25,11 @@ export const input: ActionHandler = async (ctx) => {
       throw new StepError(`等待 {{${placeholderVar}}} 超時`);
     }
     vars.set(placeholderVar, code);
-    vars.set('code', code);
-    vars.set('ga_code', code);
+    if (placeholderVar === 'ga_code') {
+      // Do nothing extra, just keep ga_code
+    } else if (placeholderVar === 'code') {
+      // Do nothing extra, just keep code
+    }
     value = code;
   }
 

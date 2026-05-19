@@ -307,6 +307,7 @@ async function handleOnErrorRequest(
   const clearCode = () => {
     vars.delete('code');
     vars.delete('ga_code');
+    vars.delete('otp_code');
     for (let i = 1; i <= 9; i++) vars.delete(`code${i}`);
   };
 
