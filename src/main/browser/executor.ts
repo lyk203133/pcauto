@@ -308,7 +308,10 @@ async function handleOnErrorRequest(
     vars.delete('code');
     vars.delete('ga_code');
     vars.delete('otp_code');
-    for (let i = 1; i <= 9; i++) vars.delete(`code${i}`);
+    for (let i = 1; i <= 20; i++) {
+      vars.delete(`code${i}`);
+      vars.delete(`split_code_${i}`);
+    }
   };
 
   if (req === 'code') {
