@@ -54,7 +54,8 @@ function toU64(v: unknown): number | undefined {
   return undefined;
 }
 
-/** 把後端傳來的 goto 原值正規化為 GotoTarget（字串保留、純數字字串轉 number）。 */
+/** 把後端傳來的 goto 原值正規化為 GotoTarget：純數字字串轉 number、已知關鍵字字面量保留，
+ *  其餘（含未知字串）回傳 undefined。 */
 export function parseGotoTarget(v: unknown): GotoTarget | undefined {
   if (v === undefined || v === null) return undefined;
   if (typeof v === 'number') return Number.isFinite(v) ? Math.trunc(v) : undefined;
