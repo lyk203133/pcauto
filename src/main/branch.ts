@@ -2,10 +2,14 @@
 // 使 node --test 的 ESM 解析失敗）。numeric 強制轉換自帶 toU64。
 
 export type GotoTarget = 'restart' | 'prev' | 'next' | 'requeue' | 'fail' | number;
+/** 一條分支規則：偵測到 selector 出現時，跳往 goto。 */
 export interface BranchRule { selector: string; goto: GotoTarget }
 export type GotoResolution = number | 'requeue' | 'fail';
 
-/** 解析為 0-based 步驟索引，或控制 sentinel。total 用於語意參考（next 不超過步數）。 */
+/** 解析為 0-based 步驟索引，或控制 sentinel（'requeue' / 'fail'）。
+ *  注意：'next' 在最後一步會回傳 total（== steps.length），即「越過結尾」的哨兵值，
+ *  讓 executor 的 while (idx < steps.length) 自然結束 = 任務正常完成（不可改成 total-1，
+ *  否則最後一步的 branch 會跳回自己造成迴圈）。 */
 export function resolveGoto(
   target: string | number | undefined | null,
   currentIdx: number,
@@ -13,6 +17,7 @@ export function resolveGoto(
 ): GotoResolution {
   if (target === undefined || target === null) return 0; // 預設 restart
   if (typeof target === 'number') {
+    // 1-based step number; 0 或負數非法 → 視為 restart(0)
     return Number.isFinite(target) && target >= 1 ? Math.trunc(target) - 1 : 0;
   }
   const t = target.trim().toLowerCase();

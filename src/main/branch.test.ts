@@ -12,6 +12,9 @@ test('resolveGoto: fail', () => assert.equal(resolveGoto('fail', 1, 10), 'fail')
 test('resolveGoto: 數字 9 (1-based) → 8', () => assert.equal(resolveGoto(9, 0, 10), 8));
 test('resolveGoto: 數字字串 "9" → 8', () => assert.equal(resolveGoto('9', 0, 10), 8));
 test('resolveGoto: 未知字串 → 0', () => assert.equal(resolveGoto('???', 3, 10), 0));
+test('resolveGoto: null → 0', () => assert.equal(resolveGoto(null, 5, 10), 0));
+test('resolveGoto: next 在最後一步 → total（越過結尾哨兵）', () => assert.equal(resolveGoto('next', 9, 10), 10));
+test('resolveGoto: 數字 0（非法 1-based）→ 0', () => assert.equal(resolveGoto(0, 3, 10), 0));
 
 const rules: BranchRule[] = [
   { selector: '#otp', goto: 'next' },
