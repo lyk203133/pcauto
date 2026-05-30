@@ -52,3 +52,4 @@ test('parseBranches: 空陣列 → undefined', () => assert.equal(parseBranches(
 test('parseGotoTarget: 字串保留', () => assert.equal(parseGotoTarget('fail'), 'fail'));
 test('parseGotoTarget: 數字字串轉數字', () => assert.equal(parseGotoTarget('9'), 9));
 test('parseGotoTarget: 缺值 → undefined', () => assert.equal(parseGotoTarget(undefined), undefined));
+test('parseGotoTarget: 未知字串 → undefined', () => assert.equal(parseGotoTarget('bogus'), undefined));
