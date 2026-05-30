@@ -348,7 +348,8 @@ async function isSelectorPresent(page: Page, selector: string): Promise<boolean>
 }
 
 /** 步驟成功後檢查 on_error_selector，輪詢至多 on_error_timeout 秒（預設 2）。
- *  回傳要跳轉的 0-based index / 'requeue' / 'fail'，或 null 表示無錯誤繼續。 */
+ *  回傳要跳轉的 0-based index、'requeue'，或 null（無錯誤繼續）。on_error_goto 不會產生 'fail'，
+ *  但型別上仍可能回傳 'fail'，呼叫端會明確中止。 */
 async function checkOnError(
   page: Page,
   step: import('../types').StepAction,
@@ -475,8 +476,20 @@ async function executeSteps(args: {
           }
 
           await handleOnErrorRequest(step.on_error_request, cfg, task, vars);
-          // 'fail' は on_error_goto では発生しない（resolveGoto は 'fail' 文字列のみ返す）
-          const gotoIdx = gotoResult as number;
+
+          if (gotoResult === 'fail') {
+            const reason = `步驟 ${idx + 1}「${stepName}」on_error_goto=fail，中止任務`;
+            broadcastLog(`  ❌ ${reason}`);
+            await sendStepCallback({
+              cfg, taskId: task.task_id, orderNo: task.order_no,
+              step: stepKey, stepName, action, attempt, maxRetries,
+              status: 'failed', message: reason, reason,
+            });
+            // eslint-disable-next-line @typescript-eslint/no-throw-literal
+            throw { reason, failure_image_data: await captureFailureScreenshot(page, stepName) };
+          }
+
+          const gotoIdx = gotoResult;
           gotoCount += 1;
           if (gotoCount > MAX_GOTO_COUNT) {
             const reason = `步驟 ${idx + 1}「${stepName}」on_error_goto 跳轉超過 ${MAX_GOTO_COUNT} 次，中止任務`;
