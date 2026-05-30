@@ -62,7 +62,9 @@ export function parseGotoTarget(v: unknown): GotoTarget | undefined {
     const s = v.trim();
     if (s === '') return undefined;
     const n = toU64(s);
-    return n !== undefined ? n : s;
+    if (n !== undefined) return n;
+    if (s === 'restart' || s === 'prev' || s === 'next' || s === 'requeue' || s === 'fail') return s;
+    return undefined;
   }
   return undefined;
 }

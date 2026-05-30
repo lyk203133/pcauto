@@ -5,6 +5,10 @@ import type { AppConfig } from '../shared/config';
 export type { AppConfig } from '../shared/config';
 export { DEFAULT_CONFIG } from '../shared/config';
 
+import type { BranchRule, GotoTarget } from './branch';
+export type { BranchRule, GotoTarget } from './branch';
+import { parseBranches, parseGotoTarget } from './branch';
+
 /**
  * StepAction mirrors Rust's `StepAction` struct.
  * All numeric fields tolerate string input (the backend sometimes sends "15" instead of 15).
@@ -31,6 +35,8 @@ export interface StepAction {
   on_error_goto?: string | number; // "restart"=第1步 | "prev"=上一步 | N(1-based)=第N步
   on_error_request?: string;   // 跳轉時通知會員重填："code"=OTP | "credentials"=帳密
   on_error_timeout?: number;   // 等錯誤元素出現的最長秒數（預設 2）
+  branches?: BranchRule[];        // action==='branch' 時的有序賽跑規則
+  default_goto?: GotoTarget;      // branch 逾時皆未命中時的去向（預設 'fail'）
 }
 
 export interface TaskDataRaw {
@@ -169,6 +175,8 @@ export function parseStepAction(raw: unknown): StepAction {
       return n !== undefined ? n : undefined;
     })(),
     on_error_request: asString(r['on_error_request']),
+    branches: parseBranches(r['branches']),
+    default_goto: parseGotoTarget(r['default_goto']),
   };
 }
 
