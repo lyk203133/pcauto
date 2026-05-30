@@ -26,6 +26,8 @@ async function getCloakLaunch(): Promise<CloakLaunchPersistentContext> {
 import type { Browser, BrowserContext, Page } from 'playwright';
 import type { AppConfig, StepAction, TaskData, TaskFailure } from '../types';
 import { buildTemplateContext } from '../types';
+// pickBranchGoto imported in Task 5
+import { resolveGoto, type GotoResolution } from '../branch';
 import { renderOpt } from '../template';
 import { lookupAction } from '../actions';
 import type { ActionContext } from '../actions/types';
@@ -329,41 +331,40 @@ async function handleOnErrorRequest(
   }
 }
 
-/** 檢查步驟完成後是否觸發 on_error_selector，輪詢等待最多 on_error_timeout 秒（預設 2）。
- *  回傳要跳轉的 index（0-based）、'requeue'（重置任務），或 null 表示無錯誤繼續。 */
-async function checkOnError(
-  page: Page,
-  step: import('../types').StepAction,
-  currentIdx: number,
-): Promise<number | 'requeue' | null> {
-  if (!step.on_error_selector) return null;
-  const timeoutMs = (step.on_error_timeout ?? 2) * 1000;
-  const deadline  = Date.now() + timeoutMs;
-  // 同時接受「可見」或「存在且有文字內容」，避免因 CSS 隱藏/高度為 0 而漏判
+/** 與 checkOnError / branch 共用的可見性判定：元素存在且（可見 或 有非空文字）。 */
+async function isSelectorPresent(page: Page, selector: string): Promise<boolean> {
   const script = `(function() {
-    var el = document.querySelector(${JSON.stringify(step.on_error_selector)});
+    var el = document.querySelector(${JSON.stringify(selector)});
     if (!el) return false;
     var visible = !!(el.offsetWidth || el.offsetHeight || el.getClientRects().length);
     var hasText = (el.innerText || el.textContent || '').trim().length > 0;
     return visible || hasText;
   })()`;
+  try {
+    return (await page.evaluate(script)) as boolean;
+  } catch {
+    return false; // 頁面導航中 → 視為尚未出現
+  }
+}
+
+/** 步驟成功後檢查 on_error_selector，輪詢至多 on_error_timeout 秒（預設 2）。
+ *  回傳要跳轉的 0-based index / 'requeue' / 'fail'，或 null 表示無錯誤繼續。 */
+async function checkOnError(
+  page: Page,
+  step: import('../types').StepAction,
+  currentIdx: number,
+  total: number,
+): Promise<GotoResolution | null> {
+  if (!step.on_error_selector) return null;
+  const timeoutMs = (step.on_error_timeout ?? 2) * 1000;
+  const deadline = Date.now() + timeoutMs;
   let detected = false;
   while (Date.now() < deadline) {
-    try {
-      detected = (await page.evaluate(script)) as boolean;
-      if (detected) break;
-    } catch { /* page navigating – keep polling */ }
+    if (await isSelectorPresent(page, step.on_error_selector)) { detected = true; break; }
     await new Promise<void>((r) => setTimeout(r, 200));
   }
   if (!detected) return null;
-  const goto = step.on_error_goto;
-  if (goto === undefined || goto === null) return 0; // 預設 restart
-  if (goto === 'restart') return 0;
-  if (goto === 'prev') return Math.max(0, currentIdx - 1);
-  if (goto === 'requeue') return 'requeue';
-  const n = typeof goto === 'number' ? goto : Number(goto);
-  if (Number.isFinite(n) && n >= 1) return n - 1; // 1-based → 0-based
-  return 0;
+  return resolveGoto(step.on_error_goto, currentIdx, total);
 }
 
 const MAX_GOTO_COUNT = 20; // 防無限循環
@@ -463,7 +464,7 @@ async function executeSteps(args: {
 
       if (stepError === undefined) {
         // 步驟本身成功，檢查 on_error_selector 分支
-        const gotoResult = await checkOnError(page, step, idx);
+        const gotoResult = await checkOnError(page, step, idx, total);
         if (gotoResult !== null) {
           if (gotoResult === 'requeue') {
             // requeue：直接重置，不通知 member（新任務的 captcha_prefetch 會重新推 member 端 UI）
@@ -474,7 +475,8 @@ async function executeSteps(args: {
           }
 
           await handleOnErrorRequest(step.on_error_request, cfg, task, vars);
-          const gotoIdx = gotoResult;
+          // 'fail' は on_error_goto では発生しない（resolveGoto は 'fail' 文字列のみ返す）
+          const gotoIdx = gotoResult as number;
           gotoCount += 1;
           if (gotoCount > MAX_GOTO_COUNT) {
             const reason = `步驟 ${idx + 1}「${stepName}」on_error_goto 跳轉超過 ${MAX_GOTO_COUNT} 次，中止任務`;
