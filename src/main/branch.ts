@@ -43,3 +43,40 @@ export function pickBranchGoto(
   }
   return null;
 }
+
+function toU64(v: unknown): number | undefined {
+  if (typeof v === 'number') return Number.isFinite(v) && v >= 0 ? Math.trunc(v) : undefined;
+  if (typeof v === 'string') {
+    const s = v.trim();
+    if (!/^\d+$/.test(s)) return undefined;
+    return Number(s);
+  }
+  return undefined;
+}
+
+/** 把後端傳來的 goto 原值正規化為 GotoTarget（字串保留、純數字字串轉 number）。 */
+export function parseGotoTarget(v: unknown): GotoTarget | undefined {
+  if (v === undefined || v === null) return undefined;
+  if (typeof v === 'number') return Number.isFinite(v) ? Math.trunc(v) : undefined;
+  if (typeof v === 'string') {
+    const s = v.trim();
+    if (s === '') return undefined;
+    const n = toU64(s);
+    return n !== undefined ? n : s;
+  }
+  return undefined;
+}
+
+/** 解析 branches 陣列；丟棄缺 selector 或 goto 無法解析的規則；無有效規則回傳 undefined。 */
+export function parseBranches(v: unknown): BranchRule[] | undefined {
+  if (!Array.isArray(v)) return undefined;
+  const out: BranchRule[] = [];
+  for (const item of v) {
+    if (!item || typeof item !== 'object') continue;
+    const o = item as Record<string, unknown>;
+    const selector = typeof o['selector'] === 'string' ? (o['selector'] as string) : undefined;
+    const goto = parseGotoTarget(o['goto']);
+    if (selector && selector.length > 0 && goto !== undefined) out.push({ selector, goto });
+  }
+  return out.length > 0 ? out : undefined;
+}

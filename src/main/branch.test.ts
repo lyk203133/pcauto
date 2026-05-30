@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { resolveGoto, pickBranchGoto, type BranchRule } from './branch.ts';
+import { parseBranches, parseGotoTarget } from './branch.ts';
 
 test('resolveGoto: restart → 0', () => assert.equal(resolveGoto('restart', 5, 10), 0));
 test('resolveGoto: undefined → 0 (預設 restart)', () => assert.equal(resolveGoto(undefined, 5, 10), 0));
@@ -35,3 +36,19 @@ test('pickBranchGoto: 都不在 → null', () => {
 test('pickBranchGoto: 空 selector 規則跳過', () => {
   assert.equal(pickBranchGoto([{ selector: '', goto: 5 }, { selector: '.s9', goto: 9 }], (s) => s === '.s9'), 9);
 });
+
+test('parseBranches: 解析 selector + goto', () => {
+  const r = parseBranches([{ selector: '#otp', goto: 'next' }, { selector: '.s9', goto: 9 }]);
+  assert.deepEqual(r, [{ selector: '#otp', goto: 'next' }, { selector: '.s9', goto: 9 }]);
+});
+test('parseBranches: goto 數字字串轉數字', () => {
+  assert.deepEqual(parseBranches([{ selector: '.s9', goto: '9' }]), [{ selector: '.s9', goto: 9 }]);
+});
+test('parseBranches: 缺 selector 的規則被丟棄', () => {
+  assert.deepEqual(parseBranches([{ goto: 5 }, { selector: '.ok', goto: 'fail' }]), [{ selector: '.ok', goto: 'fail' }]);
+});
+test('parseBranches: 非陣列 → undefined', () => assert.equal(parseBranches('x'), undefined));
+test('parseBranches: 空陣列 → undefined', () => assert.equal(parseBranches([]), undefined));
+test('parseGotoTarget: 字串保留', () => assert.equal(parseGotoTarget('fail'), 'fail'));
+test('parseGotoTarget: 數字字串轉數字', () => assert.equal(parseGotoTarget('9'), 9));
+test('parseGotoTarget: 缺值 → undefined', () => assert.equal(parseGotoTarget(undefined), undefined));
