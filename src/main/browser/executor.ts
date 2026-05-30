@@ -26,8 +26,7 @@ async function getCloakLaunch(): Promise<CloakLaunchPersistentContext> {
 import type { Browser, BrowserContext, Page } from 'playwright';
 import type { AppConfig, StepAction, TaskData, TaskFailure } from '../types';
 import { buildTemplateContext } from '../types';
-// pickBranchGoto imported in Task 5
-import { resolveGoto, type GotoResolution } from '../branch';
+import { resolveGoto, pickBranchGoto, type GotoResolution } from '../branch';
 import { renderOpt } from '../template';
 import { lookupAction } from '../actions';
 import type { ActionContext } from '../actions/types';
@@ -368,6 +367,33 @@ async function checkOnError(
   return resolveGoto(step.on_error_goto, currentIdx, total);
 }
 
+/** branch 步驟的賽跑：每 200ms 依序測試 branches[].selector，第一個 present 勝。
+ *  逾時前皆未命中 → 採 default_goto（預設 'fail'）。回傳已解析的去向。 */
+async function raceBranch(
+  page: Page,
+  step: import('../types').StepAction,
+  idx: number,
+  total: number,
+  shouldStop: () => boolean,
+): Promise<{ resolved: GotoResolution; matched: boolean } | { stopped: true }> {
+  const branches = step.branches ?? [];
+  const timeoutMs = (step.timeout ?? 10) * 1000;
+  const deadline = Date.now() + timeoutMs;
+
+  while (Date.now() < deadline) {
+    if (shouldStop()) return { stopped: true };
+    const present = new Set<string>();
+    for (const rule of branches) {
+      if (!rule.selector) continue;
+      if (await isSelectorPresent(page, rule.selector)) { present.add(rule.selector); break; }
+    }
+    const goto = pickBranchGoto(branches, (s) => present.has(s));
+    if (goto !== null) return { resolved: resolveGoto(goto, idx, total), matched: true };
+    await new Promise<void>((r) => setTimeout(r, 200));
+  }
+  return { resolved: resolveGoto(step.default_goto ?? 'fail', idx, total), matched: false };
+}
+
 const MAX_GOTO_COUNT = 20; // 防無限循環
 
 async function executeSteps(args: {
@@ -393,6 +419,53 @@ async function executeSteps(args: {
     const maxRetries = stepMaxRetries(step);
     const stepName = stepCallbackName(step, idx + 1);
     const stepKey = `step_${idx + 1}_${action}`;
+
+    // ── branch：控制流節點，不派發 handler，不做 on_error 後置檢查 ──
+    if (action === 'branch') {
+      await sendStepCallback({
+        cfg, taskId: task.task_id, orderNo: task.order_no, step: stepKey, stepName,
+        action, attempt: 1, maxRetries: 1, status: 'running',
+        message: `分支判斷中（最多 ${step.timeout ?? 10}s）`,
+      });
+      const r = await raceBranch(page, step, idx, total, shouldStop);
+      if ('stopped' in r) { broadcastLog('⏹ 用戶已停止'); return { ok: false }; }
+      const { resolved, matched } = r;
+
+      if (resolved === 'requeue') {
+        broadcastLog(`  ♻️ 分支步驟 ${idx + 1} → 重置任務並重新排隊`);
+        await requeueTask(cfg, task.task_id, task.order_no);
+        return { ok: false };
+      }
+      if (resolved === 'fail') {
+        const reason = matched
+          ? `步驟 ${idx + 1}「${stepName}」分支命中 fail 規則,中斷任務`
+          : `步驟 ${idx + 1}「${stepName}」分支判斷逾時(${step.timeout ?? 10}s 內規則皆未命中),中斷任務`;
+        broadcastLog(`  ❌ ${reason}`);
+        await sendStepCallback({
+          cfg, taskId: task.task_id, orderNo: task.order_no, step: stepKey, stepName,
+          action, attempt: 1, maxRetries: 1, status: 'failed', message: reason, reason,
+        });
+        // eslint-disable-next-line @typescript-eslint/no-throw-literal
+        throw { reason, failure_image_data: await captureFailureScreenshot(page, stepName) };
+      }
+
+      gotoCount += 1;
+      if (gotoCount > MAX_GOTO_COUNT) {
+        const reason = `分支跳轉超過 ${MAX_GOTO_COUNT} 次,中止任務`;
+        broadcastLog(`  ❌ ${reason}`);
+        // eslint-disable-next-line @typescript-eslint/no-throw-literal
+        throw { reason, failure_image_data: await captureFailureScreenshot(page, stepName) };
+      }
+      broadcastLog(`  ↳ 分支${matched ? '命中' : '逾時預設'} → 跳至步驟 ${resolved + 1}`);
+      await sendStepCallback({
+        cfg, taskId: task.task_id, orderNo: task.order_no, step: stepKey, stepName,
+        action, attempt: 1, maxRetries: 1, status: 'success',
+        message: `分支${matched ? '命中' : '逾時預設'} → 步驟 ${resolved + 1}`,
+      });
+      idx = resolved;
+      await new Promise<void>((r) => setTimeout(r, randMs()));
+      continue;
+    }
 
     let attempt = 0;
     // eslint-disable-next-line no-constant-condition

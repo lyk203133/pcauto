@@ -35,6 +35,7 @@ export const actionRegistry: Record<string, ActionHandler> = {
   captcha: captchaImage,
   wait,
   screenshot,
+  branch: async () => { /* 控制流由 executor 特判，handler 不執行頁面操作 */ },
   js,
   scroll,
   keyboard_type: keyboardType,
